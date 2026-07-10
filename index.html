@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fare Logger · Zipo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14181F; --steel:#5B6572; --faint:#8B94A0;
+    --paper:#F5F6F8; --card:#FFFFFF; --line:#E2E5EA; --line-soft:#EDEFF2;
+    --signal:#2563C9; --signal-dk:#1D4FA8; --signal-wash:#EAF1FC;
+    --amber:#B7791F; --amber-wash:#FBF0DA;
+    --danger:#B42318; --danger-wash:#FBEBE9;
+    --ok:#0E7C5A;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:system-ui,-apple-system,'Segoe UI',sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    --r:14px; --r-sm:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:640px;margin:0 auto;padding:20px 16px 64px;}
+  .num{font-variant-numeric:tabular-nums;font-family:var(--mono);}
+
+  /* ---- masthead ---- */
+  .mast{display:flex;align-items:baseline;justify-content:space-between;
+    margin:6px 2px 20px;gap:12px;}
+  .mast h1{font-family:var(--disp);font-weight:600;font-size:19px;letter-spacing:-0.02em;margin:0;}
+  .mast .sub{font-size:12px;color:var(--faint);letter-spacing:0.04em;text-transform:uppercase;}
+
+  /* ---- hero counter + button ---- */
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:22px 22px 20px;margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(20,24,31,0.04),0 8px 24px rgba(20,24,31,0.03);}
+  .readout{display:flex;align-items:flex-end;gap:20px;margin-bottom:18px;}
+  .readout .stat{display:flex;flex-direction:column;gap:2px;}
+  .readout .n{font-family:var(--mono);font-weight:600;font-size:30px;line-height:1;
+    letter-spacing:-0.02em;color:var(--ink);}
+  .readout .l{font-size:11px;color:var(--faint);letter-spacing:0.06em;text-transform:uppercase;}
+  .readout .div{width:1px;align-self:stretch;background:var(--line);margin:2px 0;}
+
+  .hero-btn{width:100%;border:none;cursor:pointer;
+    background:var(--signal);color:#fff;
+    font-family:var(--disp);font-weight:600;font-size:17px;letter-spacing:-0.01em;
+    padding:18px 20px;border-radius:var(--r);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    box-shadow:0 1px 0 var(--signal-dk),0 6px 16px rgba(37,99,201,0.28);
+    transition:transform .08s ease,box-shadow .12s ease,background .12s ease;}
+  .hero-btn:hover{background:var(--signal-dk);}
+  .hero-btn:active{transform:translateY(1px);box-shadow:0 1px 0 var(--signal-dk),0 3px 8px rgba(37,99,201,0.24);}
+  .hero-btn .ico{font-size:20px;}
+
+  /* ---- generic buttons ---- */
+  button{font-family:var(--body);}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+    font-size:13px;font-weight:500;padding:9px 14px;border-radius:var(--r-sm);cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;transition:border-color .12s,background .12s;}
+  .btn:hover{border-color:var(--steel);}
+  .btn.ghost{background:transparent;}
+  .btn.small{font-size:12px;padding:6px 10px;}
+  .btn i{font-size:15px;}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;}
+
+  .muted{color:var(--steel);font-size:13px;}
+  .row{display:flex;gap:10px;align-items:center;}
+
+  /* ---- cards / config ---- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:18px;margin-bottom:14px;}
+  details.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:0;margin-bottom:14px;overflow:hidden;}
+  details.panel > summary{cursor:pointer;font-family:var(--disp);font-weight:500;font-size:14px;
+    padding:15px 18px;list-style:none;display:flex;align-items:center;gap:8px;
+    color:var(--ink);user-select:none;}
+  details.panel > summary::-webkit-details-marker{display:none;}
+  details.panel > summary .chev{margin-left:auto;color:var(--faint);transition:transform .15s;}
+  details.panel[open] > summary .chev{transform:rotate(180deg);}
+  details.panel > summary:hover{background:var(--line-soft);}
+  .panel-body{padding:4px 18px 18px;}
+  .sub{border-top:1px solid var(--line-soft);padding:16px 0 4px;}
+  .sub:first-child{border-top:none;padding-top:6px;}
+  .sub h3{font-family:var(--disp);font-weight:500;font-size:13px;margin:0 0 10px;
+    letter-spacing:0.01em;color:var(--ink);}
+
+  /* ---- inputs ---- */
+  input[type="number"],input[type="text"]{width:100%;font-family:var(--body);font-size:15px;
+    padding:11px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--card);
+    color:var(--ink);transition:border-color .12s,box-shadow .12s;-webkit-appearance:none;}
+  input[type="number"]{font-family:var(--mono);}
+  input:focus{outline:none;border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-wash);}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label{font-size:11px;color:var(--faint);letter-spacing:0.05em;text-transform:uppercase;font-weight:500;}
+
+  /* ---- chips / tags ---- */
+  .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;
+    font-family:var(--mono);letter-spacing:0.01em;}
+  .chk{display:flex;align-items:center;gap:7px;font-size:13px;padding:7px 11px;
+    border:1px solid var(--line);border-radius:var(--r-sm);cursor:pointer;transition:border-color .12s,background .12s;}
+  .chk:hover{border-color:var(--steel);}
+  .chk input{width:auto;accent-color:var(--signal);}
+  .chipgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;}
+  .tag{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);
+    border-radius:20px;font-size:12px;font-weight:500;background:var(--card);}
+  .tag button{border:none;background:none;padding:0;cursor:pointer;color:var(--faint);font-size:15px;line-height:1;}
+  .tag button:hover{color:var(--danger);}
+  .miniform{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+  .pairrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:13px;}
+  .pairrow:last-child{border-bottom:none;}
+
+  /* ---- ledger table ---- */
+  .ledger-h{font-family:var(--disp);font-weight:500;font-size:13px;margin:20px 2px 8px;
+    display:flex;align-items:center;justify-content:space-between;}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
+  thead th{background:var(--line-soft);text-align:left;padding:9px 12px;
+    font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--faint);font-weight:600;}
+  td{padding:10px 12px;border-top:1px solid var(--line-soft);}
+  tbody tr:first-child td{border-top:none;}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--r);
+    padding:28px 20px;text-align:center;color:var(--faint);font-size:14px;}
+
+  /* ---- capture screen ---- */
+  .capcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:18px 20px;margin-bottom:16px;
+    background:linear-gradient(180deg,var(--signal-wash),var(--card) 70%);}
+  .capcard .route{font-family:var(--disp);font-weight:600;font-size:21px;letter-spacing:-0.02em;
+    line-height:1.2;margin:8px 0 4px;}
+  .pcchip{display:inline-flex;align-items:center;gap:8px;background:var(--card);
+    border:1px solid var(--line);border-radius:20px;padding:5px 6px 5px 12px;font-size:12px;}
+  .pcchip .pclabel{color:var(--faint);font-size:10px;letter-spacing:0.04em;text-transform:uppercase;}
+  .pcchip .pcval{font-family:var(--mono);font-weight:600;letter-spacing:0.02em;}
+  .pcchip button{border:none;background:var(--signal-wash);color:var(--signal-dk);cursor:pointer;
+    font-size:11px;font-weight:600;padding:4px 9px;border-radius:14px;display:inline-flex;align-items:center;gap:4px;}
+  .pcchip button:hover{background:var(--signal);color:#fff;}
+  .pcchip button.copied{background:var(--ok);color:#fff;}
+  .tierbadge{display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:#fff;
+    font-family:var(--disp);font-weight:600;font-size:16px;padding:8px 16px;border-radius:20px;}
+  .progressdots{display:flex;gap:5px;margin-top:8px;}
+  .progressdots span{width:7px;height:7px;border-radius:50%;background:var(--line);}
+  .progressdots span.on{background:var(--signal);}
+  .progressdots span.done{background:var(--ok);}
+  .grouplabel{font-family:var(--disp);font-weight:500;font-size:12px;color:var(--faint);
+    letter-spacing:0.04em;text-transform:uppercase;margin:20px 2px 10px;
+    display:flex;align-items:center;gap:8px;}
+  .grouplabel::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .btn-primary{background:var(--signal);color:#fff;border:none;font-family:var(--disp);font-weight:600;
+    font-size:15px;padding:14px 20px;border-radius:var(--r-sm);cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;
+    box-shadow:0 1px 0 var(--signal-dk),0 4px 12px rgba(37,99,201,0.22);transition:transform .08s,background .12s;}
+  .btn-primary:hover{background:var(--signal-dk);}
+  .btn-primary:active{transform:translateY(1px);}
+  .btn-skip{background:var(--amber-wash);color:var(--amber);border:1px solid transparent;
+    font-size:13px;font-weight:500;padding:9px 14px;border-radius:var(--r-sm);cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;}
+  .btn-skip:hover{border-color:var(--amber);}
+
+  /* ---- toast ---- */
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
+    background:var(--ink);color:#fff;padding:11px 20px;border-radius:22px;font-size:13px;
+    font-weight:500;z-index:999;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
+    box-shadow:0 8px 24px rgba(20,24,31,0.24);}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---- undo bar (top right) ---- */
+  #undoBar{position:fixed;top:16px;right:16px;z-index:1000;
+    background:var(--ink);color:#fff;padding:9px 9px 9px 16px;border-radius:24px;
+    display:none;align-items:center;gap:10px;font-size:13px;font-weight:500;
+    box-shadow:0 8px 24px rgba(20,24,31,0.28);opacity:0;transform:translateY(-8px);
+    transition:opacity .18s,transform .18s;max-width:calc(100vw - 32px);}
+  #undoBar.show{display:flex;opacity:1;transform:translateY(0);}
+  #undoBar .undoMsg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #undoBar button.undoAction{background:var(--signal);color:#fff;border:none;
+    padding:7px 14px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  #undoBar button.undoAction:hover{background:var(--signal-dk);}
+  #undoBar button.undoX{background:none;border:none;color:rgba(255,255,255,0.6);
+    cursor:pointer;font-size:13px;padding:4px 6px;line-height:1;}
+  #undoBar button.undoX:hover{color:#fff;}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+  @media (max-width:400px){
+    .readout{gap:12px;}
+    .readout .n{font-size:24px;}
+    .readout .l{font-size:10px;letter-spacing:0.03em;}
+    .wrap{padding:16px 12px 56px;}
+  }
+
+  /* ---- auth gate + topbar (Supabase app) ---- */
+  #authGate{position:fixed;inset:0;background:var(--paper);z-index:2000;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--faint);padding:24px;}
+  #appShell{display:none;}
+  .signout{border:1px solid var(--line);background:var(--card);color:var(--steel);
+    font-size:12px;font-weight:500;padding:6px 12px;border-radius:20px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;transition:border-color .12s,color .12s;}
+  .signout:hover{border-color:var(--steel);color:var(--ink);}
+  .whoami{font-size:11px;color:var(--faint);font-family:var(--mono);display:inline-flex;align-items:center;}
+  .syncdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--faint);margin-right:6px;vertical-align:middle;}
+  .syncdot.ok{background:var(--ok);} .syncdot.busy{background:var(--amber);} .syncdot.err{background:var(--danger);}
+</style>
+
+</head>
+<body>
+<div id="authGate">Checking your session…</div>
+<div id="appShell">
+<div class="topbar" style="max-width:640px;margin:0 auto;padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:12px;">
+  <span class="whoami" id="whoami"></span>
+  <button class="signout" id="signOutBtn">Sign out</button>
+</div>
+<div class="wrap">
+  <div id="idle">
+    <div class="mast">
+      <h1>Fare Logger</h1>
+      <span class="sub">Zipo</span>
+    </div>
+
+    <div class="hero">
+      <div class="readout">
+        <div class="stat">
+          <span class="n" id="obsN">0</span>
+          <span class="l">Observations</span>
+        </div>
+        <div class="div"></div>
+        <div class="stat">
+          <span class="n" id="rowN">0</span>
+          <span class="l">Tier rows</span>
+        </div>
+        <div class="div"></div>
+        <div class="stat">
+          <span class="n" id="lastT">—</span>
+          <span class="l">Last logged</span>
+        </div>
+      </div>
+      <button id="startBtn" class="hero-btn"><span class="ico">+</span> New observation</button>
+    </div>
+
+    <details class="panel" id="settings">
+      <summary>Config <span class="muted" id="cfgSummary" style="font-weight:400;font-size:12px;"></span><span class="chev">&#9662;</span></summary>
+      <div class="panel-body">
+      <div class="sub">
+        <h3>Sampling mode</h3>
+        <div class="btnrow">
+          <label class="chk"><input type="radio" name="mode" value="weighted"> Weighted by type</label>
+          <label class="chk"><input type="radio" name="mode" value="uniform"> Uniform</label>
+          <label class="chk"><input type="radio" name="mode" value="manual"> Pick pair each time</label>
+        </div>
+        <div class="muted" style="margin-top:8px;">Weighted uses each type's multiplier (below). Draws only from ticked pairs.</div>
+      </div>
+
+      <div class="sub">
+        <h3>Car types</h3>
+        <div id="tierTags" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;"></div>
+        <div class="row">
+          <input type="text" id="newTier" placeholder="Add a car type (e.g. Pet, Assist)" />
+          <button id="addTier" class="btn">Add</button>
+        </div>
+        <div class="muted" style="margin-top:8px;">Each type becomes one question per observation.</div>
+      </div>
+
+      <div class="sub">
+        <h3>Type weights <span class="muted" style="font-weight:400;">· weighted mode</span></h3>
+        <div id="typeWeights" class="chipgrid"></div>
+      </div>
+
+      <div class="sub">
+        <h3>Fare defaults <span class="muted" style="font-weight:400;">· per vehicle type, for the Default button</span></h3>
+        <div id="fareDefaultsByTier"></div>
+        <div class="muted" style="margin-top:4px;">Tapping Default in the fare breakdown fills these four fields using whichever vehicle you're currently logging. Operating fee and tolls are never auto-filled.</div>
+      </div>
+
+      <div class="sub">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Sampling pool <span class="muted" id="poolCount" style="font-weight:400;"></span></span>
+          <span class="btnrow"><button id="allPairs" class="btn small">All</button><button id="noPairs" class="btn small">None</button></span>
+        </h3>
+        <div id="pairList"></div>
+        <details style="margin-top:12px;">
+          <summary style="font-size:13px;cursor:pointer;color:var(--signal);font-weight:500;">+ Add a new pair</summary>
+          <div class="miniform" style="margin-top:10px;">
+            <input type="text" id="npId" placeholder="ID (e.g. CC06)" />
+            <input type="text" id="npType" placeholder="type" list="typeList" />
+            <input type="text" id="npO" placeholder="origin name" />
+            <input type="text" id="npD" placeholder="dest name" />
+            <input type="number" id="npOlat" placeholder="origin lat" step="any" />
+            <input type="number" id="npOlng" placeholder="origin lng" step="any" />
+            <input type="number" id="npDlat" placeholder="dest lat" step="any" />
+            <input type="number" id="npDlng" placeholder="dest lng" step="any" />
+            <input type="text" id="npOpc" placeholder="origin postcode" />
+            <input type="text" id="npDpc" placeholder="dest postcode" />
+          </div>
+          <datalist id="typeList"></datalist>
+          <button id="addPair" class="btn" style="margin-top:10px;">Add pair</button>
+        </details>
+      </div>
+
+      <div class="sub">
+        <button id="resetCfg" class="btn small ghost">Reset to defaults</button>
+      </div>
+      </div>
+    </details>
+
+    <div class="btnrow" style="margin-bottom:6px;">
+      <button id="exportBtn" class="btn">Export CSV</button>
+      <button id="clearBtn" class="btn ghost">Clear data</button>
+    </div>
+    <div id="clearGate" style="display:none;"></div>
+    <div id="obsEditPanel"></div>
+    <div id="tableWrap"></div>
+  </div>
+
+  <div id="pickPair" style="display:none;">
+    <div class="mast"><h1>Choose a pair</h1><span class="sub">manual mode</span></div>
+    <div class="card">
+      <div class="chipgrid" id="manualPairChips" style="grid-template-columns:1fr;"></div>
+    </div>
+    <button id="cancelPick" class="btn ghost">Cancel</button>
+  </div>
+
+  <div id="capture" style="display:none;">
+    <div class="capcard">
+      <div class="row" style="justify-content:space-between;">
+        <span class="pill" id="capType"></span>
+        <span class="muted num" id="capTime"></span>
+      </div>
+      <div class="route" id="capPair"></div>
+      <div class="muted num" id="capRoute"></div>
+      <div id="pcRow" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="row" style="justify-content:space-between;margin-bottom:14px;">
+      <div>
+        <span class="tierbadge" id="tierName"></span>
+        <div class="progressdots" id="progressDots"></div>
+      </div>
+      <button id="skipBtn" class="btn-skip">Not available</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:6px;">
+      <div class="field"><label for="fPrice">Price (£)</label><input type="number" id="fPrice" inputmode="decimal" step="0.01" placeholder="14.50" /></div>
+      <div class="field"><label for="fEta">Wait for driver (min)</label><input type="number" id="fEta" inputmode="numeric" step="1" placeholder="5" /></div>
+      <div class="field"><label for="fEtaTime">ETA (e.g. 13:20)</label><input type="time" id="fEtaTime" /></div>
+      <div class="field"><label for="fJourney">Journey length (min)</label><input type="number" id="fJourney" inputmode="numeric" step="1" placeholder="22" /></div>
+    </div>
+
+    <div class="grouplabel">Fare breakdown <button id="fillDefaults" class="btn small" style="margin-left:auto;font-size:11px;padding:4px 10px;">Default</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">
+      <div class="field"><label for="fBase">Base fare (£)</label><input type="number" id="fBase" inputmode="decimal" step="0.01" placeholder="1.78" /></div>
+      <div class="field"><label for="fMin">Minimum fare (£)</label><input type="number" id="fMin" inputmode="decimal" step="0.01" placeholder="4.30" /></div>
+      <div class="field"><label for="fPerMin">Per minute (£)</label><input type="number" id="fPerMin" inputmode="decimal" step="0.01" placeholder="0.08" /></div>
+      <div class="field"><label for="fPerMile">Per mile (£)</label><input type="number" id="fPerMile" inputmode="decimal" step="0.01" placeholder="0.96" /></div>
+      <div class="field"><label for="fOpFee">Operating fee (£)</label><input type="number" id="fOpFee" inputmode="decimal" step="0.01" placeholder="18.81" /></div>
+      <div class="field"><label for="fToll">Surcharges (£)</label><input type="number" id="fToll" inputmode="decimal" step="0.01" placeholder="0.00" /></div>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div class="field"><input type="text" id="fNote" placeholder="Note (optional)" /></div>
+    </div>
+
+    <div class="btnrow">
+      <button id="nextBtn" class="btn-primary">Save &amp; next →</button>
+      <button id="abortBtn" class="btn ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+// ===================================================================
+// Supabase client, auth gate, DB<->row mappers, per-row persistence.
+// ===================================================================
+const ZCFG = window.ZIPO_CONFIG || {};
+const sb = window.supabase.createClient(ZCFG.SUPABASE_URL, ZCFG.SUPABASE_ANON_KEY);
+let CURRENT_USER = null;
+const TABLE = 'fare_entries';
+const CONFIG_TABLE = 'app_config';
+const CONFIG_ID = 'shared';   // single shared config row
+let _cfgSaveTimer = null;
+
+function setSync(state){ const el=document.getElementById('syncDot'); if(el) el.className='syncdot '+(state||''); }
+
+function dbToRow(d){
+  const na = v => (v===null||v===undefined) ? 'NaN' : String(v);
+  return { _id:d.id, _db:d.id,
+    date:d.obs_date||'', time:d.obs_time||'',
+    pair_id:d.pair_id||'', pair_type:d.pair_type||'',
+    origin:d.origin||'', destination:d.destination||'',
+    origin_lat:d.origin_lat, origin_lng:d.origin_lng, dest_lat:d.dest_lat, dest_lng:d.dest_lng,
+    vehicle:d.vehicle||'', skipped:d.skipped?1:0,
+    price_gbp:na(d.price_gbp), wait_for_driver_min:na(d.wait_for_driver_min),
+    driver_eta:na(d.driver_eta), journey_min:na(d.journey_min),
+    base_fare:na(d.base_fare), minimum_fare:na(d.minimum_fare),
+    per_minute:na(d.per_minute), per_mile:na(d.per_mile),
+    operating_fee:na(d.operating_fee), tolls_surcharges:na(d.tolls_surcharges),
+    notes:d.notes||'' };
+}
+function rowToDb(r){
+  const num = v => (v==='NaN'||v===''||v==null||isNaN(parseFloat(v))) ? null : parseFloat(v);
+  const txt = v => (v==='NaN'||v==null||v==='') ? null : String(v);
+  const co  = v => (v===''||v==null) ? null : v;
+  return { obs_date:r.date||null, obs_time:r.time||null,
+    pair_id:r.pair_id||null, pair_type:r.pair_type||null,
+    origin:r.origin||null, destination:r.destination||null,
+    origin_lat:co(r.origin_lat), origin_lng:co(r.origin_lng), dest_lat:co(r.dest_lat), dest_lng:co(r.dest_lng),
+    vehicle:r.vehicle||null, skipped:!!r.skipped,
+    price_gbp:num(r.price_gbp), wait_for_driver_min:num(r.wait_for_driver_min),
+    driver_eta:txt(r.driver_eta), journey_min:num(r.journey_min),
+    base_fare:num(r.base_fare), minimum_fare:num(r.minimum_fare),
+    per_minute:num(r.per_minute), per_mile:num(r.per_mile),
+    operating_fee:num(r.operating_fee), tolls_surcharges:num(r.tolls_surcharges),
+    notes:r.notes||'' };
+}
+
+async function insertRow(row){
+  setSync('busy');
+  const payload = rowToDb(row); payload.created_by = CURRENT_USER ? CURRENT_USER.id : null;
+  const { data, error } = await sb.from(TABLE).insert(payload).select('id').single();
+  if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
+  row._db = data.id; row._id = data.id; setSync('ok');
+}
+async function updateRow(row){
+  if(!row._db) return insertRow(row);
+  setSync('busy');
+  const { error } = await sb.from(TABLE).update(rowToDb(row)).eq('id', row._db);
+  if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
+  setSync('ok');
+}
+async function deleteRow(row){
+  if(!row || !row._db) return;
+  setSync('busy');
+  const { error } = await sb.from(TABLE).delete().eq('id', row._db);
+  if(error){ setSync('err'); flash('Delete failed: '+error.message); return; }
+  setSync('ok');
+}
+async function clearAllDb(backup){
+  setSync('busy');
+  const ids = backup.map(r=>r._db).filter(Boolean);
+  if(ids.length){ const { error } = await sb.from(TABLE).delete().in('id', ids);
+    if(error){ setSync('err'); flash('Clear failed: '+error.message); return; } }
+  setSync('ok');
+}
+async function restoreAllDb(backup){
+  setSync('busy');
+  for(const r of backup){ r._db=null; await insertRow(r); }
+  setSync('ok'); render();
+}
+
+async function gateInit(){
+  const gate = document.getElementById('authGate');
+  const shell = document.getElementById('appShell');
+  if(!ZCFG.SUPABASE_URL || ZCFG.SUPABASE_URL.indexOf('YOUR-PROJECT')!==-1){
+    gate.innerHTML = '<div style="max-width:360px;text-align:center;line-height:1.5;">'+
+      '<b style="color:var(--danger);">Not configured.</b><br>Add your Supabase URL and anon key in <span class="num">config.js</span>, then reload.</div>';
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  if(!data.session){ window.location.replace('login.html'); return; }
+  CURRENT_USER = data.session.user;
+  const who = document.getElementById('whoami');
+  if(who) who.innerHTML = '<span class="syncdot ok" id="syncDot"></span>'+(CURRENT_USER.email||'signed in');
+  gate.style.display='none'; shell.style.display='block';
+  sb.auth.onAuthStateChange((_e, session)=>{ if(!session) window.location.replace('login.html'); });
+  document.getElementById('signOutBtn').onclick = async ()=>{ await sb.auth.signOut(); window.location.replace('login.html'); };
+  load();
+}
+
+// ---------------------------------------------------------------------
+// Password required before deleting shared data — both the "Clear data"
+// wipe AND deleting a single row prompt for this. Change it before going
+// live. Leave it as '' to fall back to a simple tap-twice confirm on
+// single-row deletes (the bulk clear then just tap-twice confirms too).
+// This is a safeguard against accidental deletion, not a security
+// boundary: it lives in the page source and is visible to anyone who
+// views it. This is intentionally NOT editable from within the app UI —
+// only from this file — so it can't be seen or changed by someone just
+// using the page.
+const DELETE_PASSWORD = 'Zipo2026';
+// ---------------------------------------------------------------------
+const DEFAULT_PAIRS = [{"id":"CC01","type":"central-central","o":"Oxford Circus","d":"Bank","olat":51.5152,"olng":-0.1418,"dlat":51.5133,"dlng":-0.0886,"opc":"W1B 3AG","dpc":"EC2R 8AH"},{"id":"CC02","type":"central-central","o":"King's Cross","d":"Waterloo","olat":51.5308,"olng":-0.1238,"dlat":51.5033,"dlng":-0.1145,"opc":"N1C 4AA","dpc":"SE1 8SW"},{"id":"CC03","type":"central-central","o":"Knightsbridge","d":"Liverpool Street","olat":51.5015,"olng":-0.1607,"dlat":51.5178,"dlng":-0.0823,"opc":"SW1X 7RJ","dpc":"EC2M 7PP"},{"id":"CC04","type":"central-central","o":"Victoria","d":"Shoreditch","olat":51.4952,"olng":-0.1441,"dlat":51.5265,"dlng":-0.0775,"opc":"SW1V 1JU","dpc":"E1 6JN"},{"id":"CC05","type":"central-central","o":"Marylebone","d":"London Bridge","olat":51.5225,"olng":-0.1631,"dlat":51.5049,"dlng":-0.0863,"opc":"NW1 5LA","dpc":"SE1 9SG"},{"id":"SC01","type":"suburb-central","o":"Clapham Common","d":"Bank","olat":51.4618,"olng":-0.1382,"dlat":51.5133,"dlng":-0.0886,"opc":"SW4 9DE","dpc":"EC2R 8AH"},{"id":"SC02","type":"suburb-central","o":"Camden Town","d":"Oxford Circus","olat":51.539,"olng":-0.1426,"dlat":51.5152,"dlng":-0.1418,"opc":"NW1 8AH","dpc":"W1B 3AG"},{"id":"SC03","type":"suburb-central","o":"Brixton","d":"Waterloo","olat":51.4626,"olng":-0.1145,"dlat":51.5033,"dlng":-0.1145,"opc":"SW9 8PP","dpc":"SE1 8SW"},{"id":"SC04","type":"suburb-central","o":"Wembley","d":"Soho","olat":51.5519,"olng":-0.2963,"dlat":51.5137,"dlng":-0.134,"opc":"HA9 0WS","dpc":"W1D 3QF"},{"id":"SC05","type":"suburb-central","o":"Richmond","d":"Bank","olat":51.4613,"olng":-0.3037,"dlat":51.5133,"dlng":-0.0886,"opc":"TW9 1EX","dpc":"EC2R 8AH"},{"id":"AP01","type":"airport","o":"Heathrow T5","d":"Bank","olat":51.4723,"olng":-0.4894,"dlat":51.5133,"dlng":-0.0886,"opc":"TW6 2GA","dpc":"EC2R 8AH"},{"id":"AP02","type":"airport","o":"Heathrow T4","d":"Victoria","olat":51.4595,"olng":-0.446,"dlat":51.4952,"dlng":-0.1441,"opc":"TW6 3XA","dpc":"SW1V 1JU"},{"id":"AP03","type":"airport","o":"London City Airport","d":"Canary Wharf","olat":51.5053,"olng":0.0553,"dlat":51.5054,"dlng":-0.0235,"opc":"E16 2PX","dpc":"E14 5AB"},{"id":"AP04","type":"airport","o":"Heathrow T2/3","d":"Paddington","olat":51.4713,"olng":-0.4525,"dlat":51.5154,"dlng":-0.1755,"opc":"TW6 1EW","dpc":"W2 1HQ"},{"id":"AP05","type":"airport","o":"London City Airport","d":"Liverpool Street","olat":51.5053,"olng":0.0553,"dlat":51.5178,"dlng":-0.0823,"opc":"E16 2PX","dpc":"EC2M 7PP"},{"id":"SS01","type":"suburb-suburb","o":"Clapham Common","d":"Brixton","olat":51.4618,"olng":-0.1382,"dlat":51.4626,"dlng":-0.1145,"opc":"SW4 9DE","dpc":"SW9 8PP"},{"id":"SS02","type":"suburb-suburb","o":"Wembley","d":"Ealing Broadway","olat":51.5519,"olng":-0.2963,"dlat":51.515,"dlng":-0.3018,"opc":"HA9 0WS","dpc":"W5 5JY"},{"id":"SS03","type":"suburb-suburb","o":"Richmond","d":"Brixton","olat":51.4613,"olng":-0.3037,"dlat":51.4626,"dlng":-0.1145,"opc":"TW9 1EX","dpc":"SW9 8PP"},{"id":"SS04","type":"suburb-suburb","o":"Enfield Town","d":"Wood Green","olat":51.6523,"olng":-0.0807,"dlat":51.5975,"dlng":-0.1097,"opc":"EN2 6BW","dpc":"N22 6XF"},{"id":"SS05","type":"suburb-suburb","o":"Brixton","d":"Clapham Common","olat":51.4626,"olng":-0.1145,"dlat":51.4618,"dlng":-0.1382,"opc":"SW9 8PP","dpc":"SW4 9DE"},{"id":"EV01","type":"event-zone","o":"The O2 Greenwich","d":"Bank","olat":51.503,"olng":0.0032,"dlat":51.5133,"dlng":-0.0886,"opc":"SE10 0DX","dpc":"EC2R 8AH"},{"id":"EV02","type":"event-zone","o":"Wembley Stadium","d":"Oxford Circus","olat":51.556,"olng":-0.2795,"dlat":51.5152,"dlng":-0.1418,"opc":"HA9 0WS","dpc":"W1B 3AG"},{"id":"EV03","type":"event-zone","o":"Tottenham Hotspur Stadium","d":"King's Cross","olat":51.6043,"olng":-0.0665,"dlat":51.5308,"dlng":-0.1238,"opc":"N17 0BX","dpc":"N1C 4AA"},{"id":"EV04","type":"event-zone","o":"Brixton Academy","d":"Waterloo","olat":51.4657,"olng":-0.1153,"dlat":51.5033,"dlng":-0.1145,"opc":"SW9 9SL","dpc":"SE1 8SW"},{"id":"EV05","type":"event-zone","o":"The O2 Greenwich","d":"Canary Wharf","olat":51.503,"olng":0.0032,"dlat":51.5054,"dlng":-0.0235,"opc":"SE10 0DX","dpc":"E14 5AB"},{"id":"CX01","type":"cross-city","o":"Fulham Broadway","d":"Canary Wharf","olat":51.4804,"olng":-0.195,"dlat":51.5054,"dlng":-0.0235,"opc":"SW6 1BY","dpc":"E14 5AB"},{"id":"CX02","type":"cross-city","o":"Putney","d":"Stratford","olat":51.461,"olng":-0.216,"dlat":51.5416,"dlng":-0.0034,"opc":"SW15 1SL","dpc":"E15 1AZ"},{"id":"SW01","type":"sw-residential","o":"Fulham Broadway","d":"Wimbledon","olat":51.4804,"olng":-0.195,"dlat":51.4214,"dlng":-0.2064,"opc":"SW6 1BY","dpc":"SW19 7NL"},{"id":"SW02","type":"sw-residential","o":"Battersea Park","d":"Croydon","olat":51.4791,"olng":-0.1465,"dlat":51.3762,"dlng":-0.0982,"opc":"SW11 4NJ","dpc":"CR0 1EA"},{"id":"SW03","type":"sw-residential","o":"Chiswick","d":"Sloane Square","olat":51.4933,"olng":-0.261,"dlat":51.4924,"dlng":-0.1565,"opc":"W4 2ND","dpc":"SW1W 8EE"}];
+const DEFAULT_TIERS = ["UberX","Electric","UberXL", "Executive", "Executive XXL"];
+const DEFAULT_WEIGHTS = {"central-central":1.4,"suburb-central":1.0,"airport":0.8,"suburb-suburb":0.8,"event-zone":1.4,"cross-city":1.1,"sw-residential":0.9};
+const PALETTE = [["#EEEDFE","#3C3489"],["#E1F5EE","#085041"],["#E6F1FB","#0C447C"],["#F1EFE8","#444441"],["#FAECE7","#712B13"],["#FBEAF0","#72243E"],["#FAEEDA","#633806"]];
+
+let rows = [];
+let cur = null;
+let cfg = null;
+const $ = id => document.getElementById(id);
+
+const DEFAULT_FARE = {base:1.78, min:4.30, per_min:0.08, per_mile:0.96};
+
+function defaultCfg(){
+  const fareDefaults={};
+  DEFAULT_TIERS.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE); });
+  return { mode:'weighted', tiers:DEFAULT_TIERS.slice(),
+    weights:Object.assign({},DEFAULT_WEIGHTS), fareDefaults,
+    pairs:JSON.parse(JSON.stringify(DEFAULT_PAIRS)), pool:DEFAULT_PAIRS.map(p=>p.id) };
+}
+
+function typeColor(type){
+  const types=[...new Set(cfg.pairs.map(p=>p.type))];
+  const i=types.indexOf(type); return PALETTE[i%PALETTE.length];
+}
+
+
+
+// Ensures every tier in cfg.tiers has a fareDefaults entry, and migrates the
+// old single flat {base,min,per_min,per_mile} shape (from before defaults
+// were per-vehicle) into a per-tier object seeded with those same values.
+function ensureFareDefaults(){
+  if(!cfg.fareDefaults || cfg.fareDefaults.base!==undefined){
+    const shared = (cfg.fareDefaults && cfg.fareDefaults.base!==undefined) ? cfg.fareDefaults : DEFAULT_FARE;
+    const perTier={};
+    cfg.tiers.forEach(t=>{ perTier[t]=Object.assign({},shared); });
+    cfg.fareDefaults=perTier;
+  }
+  cfg.tiers.forEach(t=>{
+    if(!cfg.fareDefaults[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE);
+  });
+}
+
+async function load() {
+  // Config is now shared across all users via Supabase (last-write-wins).
+  let remote=null;
+  try { remote = await loadConfig(); } catch(e){}
+  let firstRun=false;
+  if(remote && remote.pairs){ cfg = remote; }
+  else { cfg = defaultCfg(); firstRun=true; }   // no shared config yet
+  if(!cfg || !cfg.pairs) cfg=defaultCfg();
+  ensureFareDefaults();
+  // Merge in any new default pairs shipped in code since the config was saved.
+  const have=new Set(cfg.pairs.map(p=>p.id));
+  let changed=firstRun;
+  DEFAULT_PAIRS.forEach(dp=>{
+    if(!have.has(dp.id)){ cfg.pairs.push(JSON.parse(JSON.stringify(dp))); cfg.pool.push(dp.id);
+      if(cfg.weights[dp.type]===undefined) cfg.weights[dp.type]=DEFAULT_WEIGHTS[dp.type]||1.0; changed=true; }
+  });
+  buildSettings();
+  // Seed / update the shared row so everyone converges on the same catalogue.
+  if(changed) persistCfg();
+  await loadRows();
+  render();
+}
+async function loadRows(){
+  setSync('busy');
+  const { data, error } = await sb.from(TABLE).select('*').order('created_at', { ascending: true });
+  if(error){ setSync('err'); flash('Load failed: '+error.message); rows=[]; return; }
+  rows = (data||[]).map(dbToRow); setSync('ok');
+}
+async function saveRows(){ /* per-row persistence handles this */ }
+
+// Load the single shared config row from Supabase (null if not created yet).
+async function loadConfig(){
+  const { data, error } = await sb.from(CONFIG_TABLE).select('data').eq('id', CONFIG_ID).maybeSingle();
+  if(error){ flash('Config load failed: '+error.message); return null; }
+  return data ? data.data : null;
+}
+
+// Upsert the shared config row (last-write-wins). Debounced so rapid edits
+// (typing a weight, ticking pairs) don't fire a request per keystroke.
+async function persistCfg(){
+  clearTimeout(_cfgSaveTimer);
+  _cfgSaveTimer = setTimeout(async ()=>{
+    setSync('busy');
+    const payload = { id: CONFIG_ID, data: cfg, updated_by: CURRENT_USER ? CURRENT_USER.id : null, updated_at: new Date().toISOString() };
+    const { error } = await sb.from(CONFIG_TABLE).upsert(payload);
+    if(error){ setSync('err'); flash('Config sync failed: '+error.message); return; }
+    setSync('ok');
+  }, 500);
+}
+// Config edits are shared: write through to Supabase (debounced).
+async function saveCfg(){ persistCfg(); }
+
+function buildSettings(){
+  document.querySelectorAll('input[name=mode]').forEach(r=>{
+    r.checked=(r.value===cfg.mode); r.onchange=e=>{ cfg.mode=e.target.value; saveCfg(); };
+  });
+  buildTierTags(); buildTypeWeights(); buildPairList(); buildTypeList(); buildFareDefaults();
+}
+
+function buildFareDefaults(){
+  ensureFareDefaults();
+  const box=$('fareDefaultsByTier'); box.innerHTML='';
+  if(!cfg.tiers.length){ box.innerHTML='<span class="muted">Add a car type above to set its defaults.</span>'; return; }
+  cfg.tiers.forEach(t=>{
+    const d=cfg.fareDefaults[t];
+    const wrap=document.createElement('div');
+    wrap.style.cssText='border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;';
+    wrap.innerHTML =
+      '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">'+t+'</div>'+
+      '<div class="miniform">'+
+        '<div class="field"><label>Base (£)</label><input type="number" step="0.01" class="fdInput" data-tier="'+esc(t)+'" data-key="base" value="'+d.base+'"></div>'+
+        '<div class="field"><label>Minimum (£)</label><input type="number" step="0.01" class="fdInput" data-tier="'+esc(t)+'" data-key="min" value="'+d.min+'"></div>'+
+        '<div class="field"><label>Per minute (£)</label><input type="number" step="0.01" class="fdInput" data-tier="'+esc(t)+'" data-key="per_min" value="'+d.per_min+'"></div>'+
+        '<div class="field"><label>Per mile (£)</label><input type="number" step="0.01" class="fdInput" data-tier="'+esc(t)+'" data-key="per_mile" value="'+d.per_mile+'"></div>'+
+      '</div>';
+    box.appendChild(wrap);
+  });
+  box.querySelectorAll('.fdInput').forEach(inp=>{
+    inp.onchange=e=>{
+      const tier=e.target.getAttribute('data-tier'), key=e.target.getAttribute('data-key');
+      if(!cfg.fareDefaults[tier]) cfg.fareDefaults[tier]=Object.assign({},DEFAULT_FARE);
+      cfg.fareDefaults[tier][key]=parseFloat(e.target.value)||0;
+      saveCfg();
+    };
+  });
+}
+
+function fillFareDefaults(){
+  if(!cur){ flash('Start an observation first.'); return; }
+  const tier=cur.tiers[cur.tierIdx];
+  ensureFareDefaults();
+  const d=cfg.fareDefaults[tier] || DEFAULT_FARE;
+  $('fBase').value=d.base; $('fMin').value=d.min;
+  $('fPerMin').value=d.per_min; $('fPerMile').value=d.per_mile;
+  flash(tier+' defaults filled.');
+}
+
+function buildTierTags(){
+  const box=$('tierTags'); box.innerHTML='';
+  cfg.tiers.forEach(t=>{
+    const s=document.createElement('span'); s.className='tag';
+    s.innerHTML=t+' <button aria-label="remove">\u00d7</button>';
+    s.querySelector('button').onclick=()=>{ cfg.tiers=cfg.tiers.filter(x=>x!==t); saveCfg(); buildTierTags(); buildFareDefaults(); };
+    box.appendChild(s);
+  });
+  if(!cfg.tiers.length) box.innerHTML='<span class="muted">No car types — add at least one.</span>';
+}
+
+function buildTypeWeights(){
+  const box=$('typeWeights'); box.innerHTML='';
+  const types=[...new Set(cfg.pairs.map(p=>p.type))];
+  types.forEach(t=>{
+    const col=typeColor(t);
+    const d=document.createElement('div'); d.className='field';
+    d.innerHTML='<label><span class="pill" style="background:'+col[0]+';color:'+col[1]+';font-size:11px;padding:1px 6px;">'+t+'</span></label>';
+    const inp=document.createElement('input'); inp.type='number'; inp.step='0.1'; inp.min='0';
+    inp.value=(cfg.weights[t]!==undefined?cfg.weights[t]:1.0);
+    inp.onchange=e=>{ cfg.weights[t]=parseFloat(e.target.value)||0; saveCfg(); };
+    d.appendChild(inp); box.appendChild(d);
+  });
+}
+
+let editingPairId=null;
+let armedDeletePairId=null;
+
+function buildPairList(){
+  const box=$('pairList'); box.innerHTML='';
+  $('poolCount').textContent=cfg.pool.length+' of '+cfg.pairs.length+' active';
+  cfg.pairs.forEach(p=>{
+    if(p.id===editingPairId){ box.appendChild(buildPairEditForm(p)); return; }
+    const col=typeColor(p.type);
+    const row=document.createElement('div'); row.className='pairrow';
+    const left=document.createElement('label'); left.className='row'; left.style.cssText='gap:6px;cursor:pointer;flex:1;';
+    left.innerHTML='<input type="checkbox" style="width:auto;" '+(cfg.pool.includes(p.id)?'checked':'')+'>'+
+      '<span class="pill" style="background:'+col[0]+';color:'+col[1]+';font-size:11px;padding:1px 6px;">'+p.id+'</span>'+
+      '<span>'+p.o+' \u2192 '+p.d+'</span>';
+    left.querySelector('input').onchange=e=>{
+      if(e.target.checked){ if(!cfg.pool.includes(p.id)) cfg.pool.push(p.id); }
+      else cfg.pool=cfg.pool.filter(x=>x!==p.id);
+      saveCfg(); $('poolCount').textContent=cfg.pool.length+' of '+cfg.pairs.length+' active';
+    };
+    const actions=document.createElement('span'); actions.style.cssText='display:flex;gap:4px;';
+    const edit=document.createElement('button'); edit.innerHTML='\u270e';
+    edit.title='Edit';
+    edit.style.cssText='border:none;background:none;cursor:pointer;color:var(--faint);font-size:14px;padding:4px;';
+    edit.onclick=()=>{ editingPairId=p.id; armedDeletePairId=null; buildPairList(); };
+    const del=document.createElement('button');
+    del.style.cssText='border:none;background:none;cursor:pointer;font-size:12px;padding:4px 6px;border-radius:10px;';
+    if(armedDeletePairId===p.id){
+      del.textContent='Confirm?'; del.style.background='var(--danger-wash)'; del.style.color='var(--danger)'; del.style.fontWeight='600';
+      del.onclick=()=>{ cfg.pairs=cfg.pairs.filter(x=>x.id!==p.id); cfg.pool=cfg.pool.filter(x=>x!==p.id);
+        armedDeletePairId=null; saveCfg(); buildPairList(); buildTypeWeights(); flash('Removed '+p.id); };
+    } else {
+      del.innerHTML='\u2715'; del.style.color='var(--faint)';
+      del.onclick=()=>{ armedDeletePairId=p.id; buildPairList();
+        setTimeout(()=>{ if(armedDeletePairId===p.id){ armedDeletePairId=null; buildPairList(); } }, 4000); };
+    }
+    actions.appendChild(edit); actions.appendChild(del);
+    row.appendChild(left); row.appendChild(actions); box.appendChild(row);
+  });
+}
+
+function buildPairEditForm(p){
+  const wrap=document.createElement('div');
+  wrap.className='card'; wrap.style.cssText='margin:8px 0;padding:14px;';
+  wrap.innerHTML =
+    '<div class="row" style="justify-content:space-between;margin-bottom:8px;">'+
+      '<span style="font-weight:500;font-size:13px;">Editing <span class="num">'+p.id+'</span> <span class="muted">(ID fixed)</span></span>'+
+    '</div>'+
+    '<div class="miniform">'+
+      '<input type="text" id="epType" placeholder="type" value="'+esc(p.type)+'" list="typeList">'+
+      '<input type="text" id="epO" placeholder="origin name" value="'+esc(p.o)+'">'+
+      '<input type="text" id="epD" placeholder="dest name" value="'+esc(p.d)+'">'+
+      '<input type="number" id="epOlat" placeholder="origin lat" step="any" value="'+p.olat+'">'+
+      '<input type="number" id="epOlng" placeholder="origin lng" step="any" value="'+p.olng+'">'+
+      '<input type="number" id="epDlat" placeholder="dest lat" step="any" value="'+p.dlat+'">'+
+      '<input type="number" id="epDlng" placeholder="dest lng" step="any" value="'+p.dlng+'">'+
+      '<input type="text" id="epOpc" placeholder="origin postcode" value="'+esc(p.opc||'')+'">'+
+      '<input type="text" id="epDpc" placeholder="dest postcode" value="'+esc(p.dpc||'')+'">'+
+    '</div>'+
+    '<div class="btnrow" style="margin-top:10px;">'+
+      '<button id="epSave" class="btn small" style="background:var(--signal);color:#fff;border-color:var(--signal);">Save</button>'+
+      '<button id="epCancel" class="btn small ghost">Cancel</button>'+
+    '</div>';
+  wrap.querySelector('#epSave').onclick=()=>{
+    const oldType=p.type;
+    p.type=wrap.querySelector('#epType').value.trim()||p.type;
+    p.o=wrap.querySelector('#epO').value.trim()||p.o;
+    p.d=wrap.querySelector('#epD').value.trim()||p.d;
+    p.olat=parseFloat(wrap.querySelector('#epOlat').value)||0;
+    p.olng=parseFloat(wrap.querySelector('#epOlng').value)||0;
+    p.dlat=parseFloat(wrap.querySelector('#epDlat').value)||0;
+    p.dlng=parseFloat(wrap.querySelector('#epDlng').value)||0;
+    p.opc=wrap.querySelector('#epOpc').value.trim();
+    p.dpc=wrap.querySelector('#epDpc').value.trim();
+    if(cfg.weights[p.type]===undefined) cfg.weights[p.type]=1.0;
+    editingPairId=null; saveCfg(); buildPairList(); buildTypeWeights(); buildTypeList();
+    flash('Saved '+p.id);
+  };
+  wrap.querySelector('#epCancel').onclick=()=>{ editingPairId=null; buildPairList(); };
+  return wrap;
+}
+
+function esc(s){ return String(s).replace(/"/g,'&quot;'); }
+
+function buildTypeList(){
+  const dl=$('typeList'); dl.innerHTML='';
+  [...new Set(cfg.pairs.map(p=>p.type))].forEach(t=>{ const o=document.createElement('option'); o.value=t; dl.appendChild(o); });
+}
+
+function addPair(){
+  const id=$('npId').value.trim();
+  if(!id){ flash('Give the pair an ID first'); return; }
+  if(cfg.pairs.some(p=>p.id===id)){ flash('That ID already exists'); return; }
+  const np={ id, type:($('npType').value.trim()||'custom'),
+    o:$('npO').value.trim()||id+' origin', d:$('npD').value.trim()||id+' dest',
+    olat:parseFloat($('npOlat').value)||0, olng:parseFloat($('npOlng').value)||0,
+    dlat:parseFloat($('npDlat').value)||0, dlng:parseFloat($('npDlng').value)||0,
+    opc:$('npOpc').value.trim(), dpc:$('npDpc').value.trim() };
+  cfg.pairs.push(np); cfg.pool.push(np.id);
+  if(cfg.weights[np.type]===undefined) cfg.weights[np.type]=1.0;
+  saveCfg();
+  ['npId','npType','npO','npD','npOlat','npOlng','npDlat','npDlng','npOpc','npDpc'].forEach(x=>$(x).value='');
+  buildPairList(); buildTypeWeights(); buildTypeList();
+}
+
+function weightedPick(){
+  const cand=cfg.pairs.filter(p=>cfg.pool.includes(p.id));
+  if(!cand.length) return null;
+  if(cfg.mode==='uniform') return cand[Math.floor(Math.random()*cand.length)];
+  const bag=[]; cand.forEach(p=>{ const w=cfg.weights[p.type]!==undefined?cfg.weights[p.type]:1; const n=Math.max(1,Math.round(w*10)); for(let i=0;i<n;i++) bag.push(p); });
+  return bag[Math.floor(Math.random()*bag.length)];
+}
+
+function startObs(){
+  if(!cfg.tiers.length){ flash('Add a car type in Config first'); return; }
+  if(!cfg.pool.length){ flash('Tick at least one pair in the pool'); return; }
+  if(cfg.mode==='manual'){ showManualPick(); return; }
+  const p=weightedPick(); if(!p){ flash('No pairs available'); return; } beginWith(p);
+}
+
+function showManualPick(){
+  $('idle').style.display='none'; $('pickPair').style.display='block';
+  const mc=$('manualPairChips'); mc.innerHTML='';
+  cfg.pairs.filter(p=>cfg.pool.includes(p.id)).forEach(p=>{
+    const col=typeColor(p.type); const b=document.createElement('button');
+    b.className='btn'; b.style.cssText='justify-content:flex-start;text-align:left;width:100%;';
+    b.innerHTML='<span class="pill" style="background:'+col[0]+';color:'+col[1]+';font-size:11px;padding:2px 8px;margin-right:8px;">'+p.id+'</span>'+p.o+' \u2192 '+p.d;
+    b.onclick=()=>{ $('pickPair').style.display='none'; beginWith(p); };
+    mc.appendChild(b);
+  });
+}
+
+function beginWith(p){
+  const now=new Date();
+  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice() };
+  $('idle').style.display='none'; $('pickPair').style.display='none'; $('capture').style.display='block';
+  renderPostcodes(p); showTier();
+}
+
+async function copyText(txt, btn){
+  try{ await navigator.clipboard.writeText(txt); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand && document.execCommand('copy'); }catch(e2){}
+    document.body.removeChild(ta);
+  }
+  if(btn){ const orig=btn.textContent; btn.textContent='Copied'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent=orig; btn.classList.remove('copied'); }, 1400); }
+  flash('Copied '+txt);
+}
+
+function renderPostcodes(p){
+  const box=$('pcRow');
+  const opc=p.opc, dpc=p.dpc;
+  if(!opc && !dpc){ box.innerHTML='<span class="muted" style="font-size:12px;">No postcode on file for this pair \u2014 add one in Config.</span>'; return; }
+  let h='<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+  if(opc) h+='<span class="pcchip"><span class="pclabel">From</span><span class="pcval">'+opc+'</span><button id="cpO">Copy</button></span>';
+  if(dpc) h+='<span class="pcchip"><span class="pclabel">To</span><span class="pcval">'+dpc+'</span><button id="cpD">Copy</button></span>';
+  if(opc && dpc) h+='<button class="btn small ghost" id="cpBoth" style="align-self:center;">Copy both</button>';
+  h+='</div>';
+  box.innerHTML=h;
+  if(opc) $('cpO').onclick=()=>copyText(opc,$('cpO'));
+  if(dpc) $('cpD').onclick=()=>copyText(dpc,$('cpD'));
+  if(opc && dpc) $('cpBoth').onclick=()=>copyText(opc+' \u2192 '+dpc,$('cpBoth'));
+}
+
+function showTier(){
+  const p=cur.pair, col=typeColor(p.type);
+  $('capType').textContent=p.type; $('capType').style.background=col[0]; $('capType').style.color=col[1];
+  $('capTime').textContent=cur.time.slice(0,5)+' · '+cur.date;
+  $('capPair').textContent=p.o+' \u2192 '+p.d; $('capRoute').textContent=p.id;
+  $('tierName').textContent=cur.tiers[cur.tierIdx];
+  // progress dots
+  const dots=$('progressDots'); dots.innerHTML='';
+  cur.tiers.forEach((_,i)=>{ const s=document.createElement('span');
+    s.className = i<cur.tierIdx?'done':(i===cur.tierIdx?'on':''); dots.appendChild(s); });
+  ['fPrice','fEta','fEtaTime','fJourney','fBase','fMin','fPerMin','fPerMile','fOpFee','fToll','fNote'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  $('fPrice').focus();
+}
+
+const NA='NaN';
+function val(id){ const el=$(id); const v=el?el.value:''; return v===''? NA : v; }
+function newRowId(){ return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function recordTier(skipped){
+  try{
+    const p=cur.pair;
+    const row={ _id:newRowId(), _db:null, date:cur.date, time:cur.time, pair_id:p.id, pair_type:p.type, origin:p.o, destination:p.d,
+      origin_lat:p.olat, origin_lng:p.olng, dest_lat:p.dlat, dest_lng:p.dlng,
+      vehicle:cur.tiers[cur.tierIdx], skipped:skipped?1:0,
+      price_gbp:skipped?NA:val('fPrice'), wait_for_driver_min:skipped?NA:val('fEta'),
+      driver_eta:skipped?NA:val('fEtaTime'), journey_min:skipped?NA:val('fJourney'),
+      base_fare:skipped?NA:val('fBase'), minimum_fare:skipped?NA:val('fMin'),
+      per_minute:skipped?NA:val('fPerMin'), per_mile:skipped?NA:val('fPerMile'),
+      operating_fee:skipped?NA:val('fOpFee'), tolls_surcharges:skipped?NA:val('fToll'),
+      notes:($('fNote')?$('fNote').value:'')||'' };
+    rows.push(row); insertRow(row);
+    cur.tierIdx++;
+    if(cur.tierIdx>=cur.tiers.length) finishObs(); else showTier();
+  }catch(e){
+    flash('Save failed: '+e.message);
+  }
+}
+
+async function finishObs(){ cur=null; await saveRows(); $('capture').style.display='none'; $('idle').style.display='block'; render(); }
+
+function render(){
+  const obs=new Set(rows.map(r=>r.date+r.time+r.pair_id)).size;
+  $('obsN').textContent=obs;
+  $('rowN').textContent=rows.length;
+  $('lastT').textContent = rows.length ? rows[rows.length-1].time.slice(0,5) : '\u2014';
+  if($('cfgSummary')) $('cfgSummary').textContent = cfg ? ('· '+cfg.tiers.length+' tiers · '+cfg.pool.length+'/'+cfg.pairs.length+' pairs · '+cfg.mode) : '';
+  if(!rows.length){
+    $('tableWrap').innerHTML='<div class="empty">No observations yet.<br>Tap <b>New observation</b> to log your first fare.</div>';
+    return;
+  }
+  rows.forEach(r=>{ if(!r._id) r._id=newRowId(); });
+  const recent=rows.slice(-12).reverse();
+  let h='<div class="ledger-h"><span>Recent</span><span class="muted" style="font-weight:400;font-size:12px;">latest '+Math.min(12,rows.length)+' of '+rows.length+' \u00b7 tap a row to edit</span></div>';
+  h+='<table><thead><tr><th>Time</th><th>Pair</th><th>Tier</th><th>Price</th><th>Base</th><th>Wait</th><th>ETA</th><th></th></tr></thead><tbody>';
+  recent.forEach(r=>{ h+='<tr class="obsrow" data-id="'+r._id+'" style="cursor:pointer;"><td class="n">'+r.time.slice(0,5)+'</td><td class="n">'+r.pair_id+'</td><td>'+r.vehicle+'</td>'+
+    '<td class="n">'+(r.skipped?'<span style="color:var(--amber)">skip</span>':(r.price_gbp==='NaN'?'\u2014':'\u00a3'+r.price_gbp))+'</td>'+
+    '<td class="n">'+(r.skipped||r.base_fare==='NaN'?'\u2014':'\u00a3'+r.base_fare)+'</td>'+
+    '<td class="n">'+(r.skipped||r.wait_for_driver_min==='NaN'?'\u2014':r.wait_for_driver_min)+'</td>'+
+    '<td class="n">'+(r.skipped||r.driver_eta==='NaN'?'\u2014':(r.driver_eta||'\u2014'))+'</td>'+
+    '<td style="color:var(--faint);">\u270e</td></tr>'; });
+  h+='</tbody></table>';
+  $('tableWrap').innerHTML=h;
+  $('tableWrap').querySelectorAll('.obsrow').forEach(tr=>{
+    tr.onclick=()=>editObservationRow(tr.getAttribute('data-id'));
+  });
+}
+
+const NAFIELDS=[['price_gbp','fePrice','Price (£)','number'],['wait_for_driver_min','feEta','Wait (min)','number'],
+  ['driver_eta','feEtaT','ETA (time)','time'],['journey_min','feJourney','Journey (min)','number'],
+  ['base_fare','feBase','Base fare (£)','number'],['minimum_fare','feMin','Minimum fare (£)','number'],
+  ['per_minute','fePerMin','Per minute (£)','number'],['per_mile','fePerMile','Per mile (£)','number'],
+  ['operating_fee','feOpFee','Operating fee (£)','number'],['tolls_surcharges','feToll','Tolls/surcharges (£)','number']];
+let armedDeleteRowId=null;
+
+function editObservationRow(id){
+  const row=rows.find(r=>r._id===id);
+  if(!row) return;
+  const panel=$('obsEditPanel');
+  let fieldsHtml='';
+  NAFIELDS.forEach(([key,fid,label,typ])=>{
+    const v = row[key]==='NaN' ? '' : row[key];
+    const extra = typ==='number' ? ' step="any"' : '';
+    fieldsHtml += '<div class="field"><label>'+label+'</label><input type="'+typ+'"'+extra+' id="'+fid+'" value="'+esc(v||'')+'"></div>';
+  });
+  panel.className='card'; panel.style.cssText='margin-bottom:14px;border-color:var(--signal);';
+  panel.innerHTML =
+    '<div class="row" style="justify-content:space-between;margin-bottom:10px;">'+
+      '<span style="font-weight:500;font-size:14px;">Editing <span class="num">'+row.pair_id+'</span> \u00b7 '+row.vehicle+' \u00b7 '+row.time.slice(0,5)+'</span>'+
+      '<label class="chk" style="font-size:12px;"><input type="checkbox" id="feSkipped" '+(row.skipped==1?'checked':'')+'> Skipped</label>'+
+    '</div>'+
+    '<div class="miniform" id="feFieldsGrid">'+fieldsHtml+'</div>'+
+    '<div class="field" style="margin-top:10px;"><label>Notes</label><input type="text" id="feNote" value="'+esc(row.notes||'')+'"></div>'+
+    '<div class="btnrow" style="margin-top:12px;">'+
+      '<button id="feSave" class="btn small" style="background:var(--signal);color:#fff;border-color:var(--signal);">Save changes</button>'+
+      '<button id="feCancel" class="btn small ghost">Cancel</button>'+
+      '<button id="feDelete" class="btn small ghost" style="margin-left:auto;color:var(--danger);">Delete row</button>'+
+    '</div>';
+  try{ panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){}
+
+  const grid=$('feFieldsGrid');
+  const syncDisabled=()=>{ grid.querySelectorAll('input').forEach(i=>i.disabled=$('feSkipped').checked); };
+  syncDisabled();
+  $('feSkipped').onchange=syncDisabled;
+
+  $('feSave').onclick=async()=>{
+    const skipped=$('feSkipped').checked;
+    row.skipped=skipped?1:0;
+    NAFIELDS.forEach(([key,fid])=>{
+      if(skipped){ row[key]='NaN'; return; }
+      const v=$(fid).value;
+      row[key] = v===''? 'NaN' : v;
+    });
+    row.notes=$('feNote').value||'';
+    await updateRow(row);
+    panel.innerHTML=''; panel.style.cssText='';
+    flash('Row updated.'); render();
+  };
+  $('feCancel').onclick=()=>{ panel.innerHTML=''; panel.style.cssText=''; };
+  const doDelete=()=>{
+    const idx=rows.findIndex(r=>r._id===id);
+    const deletedRow=rows[idx];
+    rows=rows.filter(r=>r._id!==id);
+    deleteRow(deletedRow);
+    panel.innerHTML=''; panel.style.cssText='';
+    flash('Row deleted.'); render();
+    showUndo('Deleted '+deletedRow.pair_id+' \u00b7 '+deletedRow.vehicle, async()=>{
+      const insertAt = Math.min(idx, rows.length);
+      rows.splice(insertAt, 0, deletedRow);
+      await insertRow(deletedRow); render();
+    });
+  };
+  $('feDelete').onclick=()=>{
+    // Deleting a shared row requires the password, same as "Clear data".
+    if(DELETE_PASSWORD){ promptDelete('Enter password to delete this row', doDelete); return; }
+    // No password configured: fall back to tap-twice confirm.
+    if(armedDeleteRowId!==id){
+      armedDeleteRowId=id;
+      const b=$('feDelete'); b.textContent='Tap again to confirm delete';
+      setTimeout(()=>{ if(armedDeleteRowId===id){ armedDeleteRowId=null; if($('feDelete')) $('feDelete').textContent='Delete row'; } },4000);
+      return;
+    }
+    armedDeleteRowId=null;
+    doDelete();
+  };
+}
+
+function exportCSV(){
+  if(!rows.length){ flash('Nothing to export yet.'); return; }
+  const cols=['date','time','pair_id','pair_type','origin','destination','origin_lat','origin_lng','dest_lat','dest_lng','vehicle','skipped','price_gbp','wait_for_driver_min','driver_eta','journey_min','base_fare','minimum_fare','per_minute','per_mile','operating_fee','tolls_surcharges','notes'];
+  const esc=v=>{ v=(v===null||v===undefined)?'':String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const csv='\ufeff'+[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\n');
+  const fname='uber_observations_'+new Date().toISOString().slice(0,10)+'.csv';
+  let downloaded=false;
+  try{
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    downloaded=true;
+  }catch(e){ downloaded=false; }
+  // Fallback for sandboxed contexts where a[download] is blocked: show the CSV
+  // in a textarea the user can select-all + copy.
+  showCsvFallback(csv, fname, downloaded);
+}
+
+
+function showCsvFallback(csv, fname, downloaded){
+  let box=$('csvFallback');
+  if(!box){
+    box=document.createElement('div'); box.id='csvFallback'; box.className='card';
+    box.style.marginTop='1rem';
+    $('idle').appendChild(box);
+  }
+  box.innerHTML =
+    '<div class="row" style="justify-content:space-between;margin-bottom:8px;">'+
+      '<span style="font-weight:500;">'+(downloaded?'Download started \u2014 or copy below':'Copy your data below')+'</span>'+
+      '<span class="btnrow"><button id="copyCsv">Copy to clipboard</button><button id="closeCsv">Close</button></span>'+
+    '</div>'+
+    '<div class="muted" style="margin-bottom:6px;">'+rows.length+' rows. Select all and copy, then paste into a file named '+fname+'</div>'+
+    '<textarea id="csvText" style="width:100%;height:160px;font-family:monospace;font-size:11px;"></textarea>';
+  $('csvText').value=csv;
+  $('copyCsv').onclick=async()=>{
+    try{ await navigator.clipboard.writeText(csv); flash('Copied '+rows.length+' rows to clipboard.'); }
+    catch(e){ $('csvText').select(); document.execCommand&&document.execCommand('copy'); flash('Selected \u2014 press Cmd/Ctrl+C to copy.'); }
+  };
+  $('closeCsv').onclick=()=>box.remove();
+}
+
+let clearArmed=false;
+async function clearAll(){
+  if(!rows.length){ flash('No data to clear.'); return; }
+  if(DELETE_PASSWORD){ showClearGate(); return; }
+  // no password set: fall back to tap-twice confirm
+  if(!clearArmed){
+    clearArmed=true;
+    const b=$('clearBtn');
+    b.innerHTML='&#9888; Tap again to confirm';
+    b.style.border='2px solid #B42318'; b.style.color='#B42318';
+    setTimeout(()=>{ clearArmed=false; b.innerHTML='&#128465; Clear data'; b.style.border=''; b.style.color=''; }, 4000);
+    return;
+  }
+  clearArmed=false;
+  const backup=rows.slice();
+  rows=[]; await clearAllDb(backup);
+  const b=$('clearBtn'); b.innerHTML='&#128465; Clear data'; b.style.border=''; b.style.color='';
+  const fb=$('csvFallback'); if(fb) fb.remove();
+  flash('All observations cleared.'); render();
+  showUndo(backup.length+' observation'+(backup.length===1?'':'s')+' cleared', async()=>{
+    rows=backup.slice(); await restoreAllDb(backup);
+  });
+}
+
+// A small centred password prompt reused for single-row deletes. Runs onOk()
+// only when the entered password matches DELETE_PASSWORD.
+function promptDelete(message, onOk){
+  let ov=$('pwOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='pwOverlay'; document.body.appendChild(ov); }
+  ov.style.cssText='position:fixed;inset:0;z-index:1500;background:rgba(20,24,31,0.45);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML =
+    '<div class="card" style="max-width:340px;width:100%;border-color:var(--danger);margin:0;">'+
+      '<div style="font-weight:500;margin-bottom:10px;color:var(--danger);">'+message+'</div>'+
+      '<input type="password" id="pwInput" placeholder="Password" style="margin-bottom:12px;" />'+
+      '<div class="btnrow" style="justify-content:flex-end;">'+
+        '<button id="pwCancel" class="btn small ghost">Cancel</button>'+
+        '<button id="pwOk" class="btn small" style="background:var(--danger);color:#fff;border-color:var(--danger);">Delete</button>'+
+      '</div>'+
+    '</div>';
+  const close=()=>{ ov.remove(); };
+  const attempt=()=>{
+    if($('pwInput').value===DELETE_PASSWORD){ close(); onOk(); }
+    else { flash('Wrong password.'); $('pwInput').value=''; $('pwInput').focus(); }
+  };
+  $('pwInput').focus();
+  $('pwOk').onclick=attempt;
+  $('pwCancel').onclick=close;
+  $('pwInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); attempt(); } });
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+}
+
+function showClearGate(){
+  const box=$('clearGate');
+  box.style.display='block';
+  box.className='card';
+  box.style.borderColor='var(--danger)';
+  box.innerHTML =
+    '<div style="font-weight:500;margin-bottom:8px;color:var(--danger);">Enter password to delete '+rows.length+' rows</div>'+
+    '<div class="row" style="gap:8px;">'+
+      '<input type="text" id="gatePass" placeholder="Password" />'+
+      '<button id="gateConfirm" class="btn small" style="background:var(--danger);color:#fff;border-color:var(--danger);">Delete</button>'+
+      '<button id="gateCancel" class="btn small ghost">Cancel</button>'+
+    '</div>';
+  $('gatePass').focus();
+  const attempt=async()=>{
+    if($('gatePass').value===DELETE_PASSWORD){
+      const backup=rows.slice();
+      rows=[]; await clearAllDb(backup); box.style.display='none'; box.innerHTML='';
+      const fb=$('csvFallback'); if(fb) fb.remove();
+      flash('All observations cleared.'); render();
+      showUndo(backup.length+' observation'+(backup.length===1?'':'s')+' cleared', async()=>{
+        rows=backup.slice(); await restoreAllDb(backup);
+      });
+    } else {
+      flash('Wrong password.');
+      $('gatePass').value=''; $('gatePass').focus();
+    }
+  };
+  $('gateConfirm').onclick=attempt;
+  $('gatePass').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); attempt(); } });
+  $('gateCancel').onclick=()=>{ box.style.display='none'; box.innerHTML=''; };
+}
+
+function flash(msg){
+  let t=$('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+function showUndo(msg, restoreFn){
+  let bar=$('undoBar');
+  if(!bar){ bar=document.createElement('div'); bar.id='undoBar'; document.body.appendChild(bar); }
+  bar.innerHTML = '<span class="undoMsg">'+msg+'</span>'+
+    '<button class="undoAction" id="undoBtn">Undo</button>'+
+    '<button class="undoX" id="undoClose">\u2715</button>';
+  bar.classList.add('show');
+  $('undoBtn').onclick=async()=>{ await restoreFn(); hideUndo(); flash('Restored.'); render(); };
+  $('undoClose').onclick=hideUndo;
+}
+function hideUndo(){
+  const bar=$('undoBar');
+  if(bar) bar.classList.remove('show');
+}
+
+$('startBtn').onclick=startObs;
+$('fillDefaults').onclick=fillFareDefaults;
+$('nextBtn').onclick=()=>recordTier(false);
+$('skipBtn').onclick=()=>recordTier(true);
+$('abortBtn').onclick=finishObs;
+$('cancelPick').onclick=()=>{ $('pickPair').style.display='none'; $('idle').style.display='block'; };
+$('exportBtn').onclick=exportCSV;
+$('clearBtn').onclick=clearAll;
+$('addTier').onclick=()=>{ const v=$('newTier').value.trim(); if(!v) return;
+  if(!cfg.tiers.includes(v)){ cfg.tiers.push(v); if(!cfg.fareDefaults[v]) cfg.fareDefaults[v]=Object.assign({},DEFAULT_FARE); }
+  $('newTier').value=''; saveCfg(); buildTierTags(); buildFareDefaults(); };
+$('newTier').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('addTier').click(); } });
+$('addPair').onclick=addPair;
+$('allPairs').onclick=()=>{ cfg.pool=cfg.pairs.map(p=>p.id); saveCfg(); buildPairList(); };
+$('noPairs').onclick=()=>{ cfg.pool=[]; saveCfg(); buildPairList(); };
+let resetArmed=false;
+$('resetCfg').onclick=()=>{
+  if(!resetArmed){ resetArmed=true; const b=$('resetCfg');
+    b.innerHTML='&#9888; Tap again to reset'; b.style.color='#B42318';
+    setTimeout(()=>{ resetArmed=false; b.innerHTML='Reset to defaults'; b.style.color=''; }, 4000);
+    return; }
+  resetArmed=false; cfg=defaultCfg(); saveCfg(); buildSettings();
+  const b=$('resetCfg'); b.innerHTML='Reset to defaults'; b.style.color='';
+  flash('Config reset to defaults.');
+};
+// Enter no longer auto-advances the tier capture — too easy to skip fields
+// by accident. Use the "Save & next" button instead.
+gateInit();
+</script>
+</div><!-- /#appShell -->
+</body>
+</html>
