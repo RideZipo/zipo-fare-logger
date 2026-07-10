@@ -348,9 +348,9 @@
 
     <div class="grouplabel">Fare breakdown <button id="fillDefaults" class="btn small" style="margin-left:auto;font-size:11px;padding:4px 10px;">Default</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">
-      <div class="field"><label for="fBase">Base fare (£)</label><input type="number" id="fBase" inputmode="decimal" step="0.01" placeholder="1.78" /></div>
+      <div class="field"><label for="fBase">Base fare (£)</label><input type="number" id="fBase" inputmode="decimal" step="0.01" placeholder="1.87" /></div>
       <div class="field"><label for="fMin">Minimum fare (£)</label><input type="number" id="fMin" inputmode="decimal" step="0.01" placeholder="4.30" /></div>
-      <div class="field"><label for="fPerMin">Per minute (£)</label><input type="number" id="fPerMin" inputmode="decimal" step="0.01" placeholder="0.08" /></div>
+      <div class="field"><label for="fPerMin">Per minute (£)</label><input type="number" id="fPerMin" inputmode="decimal" step="0.01" placeholder="0.09" /></div>
       <div class="field"><label for="fPerMile">Per mile (£)</label><input type="number" id="fPerMile" inputmode="decimal" step="0.01" placeholder="0.96" /></div>
       <div class="field"><label for="fOpFee">Operating fee (£)</label><input type="number" id="fOpFee" inputmode="decimal" step="0.01" placeholder="18.81" /></div>
       <div class="field"><label for="fToll">Surcharges (£)</label><input type="number" id="fToll" inputmode="decimal" step="0.01" placeholder="0.00" /></div>
@@ -491,10 +491,17 @@ let cfg = null;
 const $ = id => document.getElementById(id);
 
 const DEFAULT_FARE = {base:1.78, min:4.30, per_min:0.08, per_mile:0.96};
+const DEFAULT_FARE_BY_TIER = {
+  "UberX":         {base:1.87, min:4.30, per_min:0.09, per_mile:0.96},
+  "Electric":      {base:1.87, min:4.30, per_min:0.09, per_mile:0.96},
+  "UberXL":        {base:2.92, min:6.00, per_min:0.13, per_mile:1.62},
+  "Executive":     {base:2.76, min:7.60, per_min:0.22, per_mile:1.57},
+  "Executive XXL": {base:3.50, min:7.74, per_min:0.17, per_mile:1.86}
+};
 
 function defaultCfg(){
   const fareDefaults={};
-  DEFAULT_TIERS.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE); });
+  DEFAULT_TIERS.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); });
   return { mode:'weighted', tiers:DEFAULT_TIERS.slice(),
     weights:Object.assign({},DEFAULT_WEIGHTS), fareDefaults,
     pairs:JSON.parse(JSON.stringify(DEFAULT_PAIRS)), pool:DEFAULT_PAIRS.map(p=>p.id) };
@@ -518,7 +525,7 @@ function ensureFareDefaults(){
     cfg.fareDefaults=perTier;
   }
   cfg.tiers.forEach(t=>{
-    if(!cfg.fareDefaults[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE);
+    if(!cfg.fareDefaults[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE);
   });
 }
 
@@ -821,6 +828,11 @@ function showTier(){
   cur.tiers.forEach((_,i)=>{ const s=document.createElement('span');
     s.className = i<cur.tierIdx?'done':(i===cur.tierIdx?'on':''); dots.appendChild(s); });
   ['fPrice','fEta','fEtaTime','fJourney','fBase','fMin','fPerMin','fPerMile','fOpFee','fToll','fNote'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  // Placeholders track this tier's fare defaults (Settings customization included).
+  ensureFareDefaults();
+  const tierFare=cfg.fareDefaults[cur.tiers[cur.tierIdx]] || DEFAULT_FARE_BY_TIER[cur.tiers[cur.tierIdx]] || DEFAULT_FARE;
+  $('fBase').placeholder=tierFare.base; $('fMin').placeholder=tierFare.min;
+  $('fPerMin').placeholder=tierFare.per_min; $('fPerMile').placeholder=tierFare.per_mile;
   $('fPrice').focus();
 }
 
