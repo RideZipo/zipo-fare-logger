@@ -343,7 +343,6 @@
       <div class="field"><label for="fPrice">Price (£)</label><input type="number" id="fPrice" inputmode="decimal" step="0.01" placeholder="14.50" /></div>
       <div class="field"><label for="fEta">Wait for driver (min)</label><input type="number" id="fEta" inputmode="numeric" step="1" placeholder="5" /></div>
       <div class="field"><label for="fEtaTime">ETA (e.g. 13:20)</label><input type="time" id="fEtaTime" /></div>
-      <div class="field"><label for="fJourney">Journey length (min)</label><input type="number" id="fJourney" inputmode="numeric" step="1" placeholder="22" /></div>
     </div>
 
     <div class="grouplabel">Fare breakdown <button id="fillDefaults" class="btn small" style="margin-left:auto;font-size:11px;padding:4px 10px;">Default</button></div>
@@ -352,8 +351,8 @@
       <div class="field"><label for="fMin">Minimum fare (£)</label><input type="number" id="fMin" inputmode="decimal" step="0.01" placeholder="4.30" /></div>
       <div class="field"><label for="fPerMin">Per minute (£)</label><input type="number" id="fPerMin" inputmode="decimal" step="0.01" placeholder="0.09" /></div>
       <div class="field"><label for="fPerMile">Per mile (£)</label><input type="number" id="fPerMile" inputmode="decimal" step="0.01" placeholder="0.96" /></div>
-      <div class="field"><label for="fOpFee">Operating fee (£)</label><input type="number" id="fOpFee" inputmode="decimal" step="0.01" placeholder="18.81" /></div>
       <div class="field"><label for="fToll">Surcharges (£)</label><input type="number" id="fToll" inputmode="decimal" step="0.01" placeholder="0.00" /></div>
+      <div class="field"><label for="fOpFee">Operating fee (£)</label><input type="number" id="fOpFee" inputmode="decimal" step="0.01" placeholder="18.81" /></div>
     </div>
 
     <div style="margin-bottom:16px;">
@@ -862,7 +861,7 @@ function showTier(){
   const dots=$('progressDots'); dots.innerHTML='';
   cur.tiers.forEach((_,i)=>{ const s=document.createElement('span');
     s.className = i<cur.tierIdx?'done':(i===cur.tierIdx?'on':''); dots.appendChild(s); });
-  ['fPrice','fEta','fEtaTime','fJourney','fBase','fMin','fPerMin','fPerMile','fOpFee','fToll','fNote'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  ['fPrice','fEta','fEtaTime','fBase','fMin','fPerMin','fPerMile','fOpFee','fToll','fNote'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
   // Placeholders track this tier's fare defaults (Settings customization included).
   ensureFareDefaults();
   const tierFare=cfg.fareDefaults[cur.tiers[cur.tierIdx]] || DEFAULT_FARE_BY_TIER[cur.tiers[cur.tierIdx]] || DEFAULT_FARE;
@@ -881,7 +880,7 @@ function recordTier(skipped){
       origin_lat:p.olat, origin_lng:p.olng, dest_lat:p.dlat, dest_lng:p.dlng,
       vehicle:cur.tiers[cur.tierIdx], skipped:skipped?1:0,
       price_gbp:skipped?NA:val('fPrice'), wait_for_driver_min:skipped?NA:val('fEta'),
-      driver_eta:skipped?NA:val('fEtaTime'), journey_min:skipped?NA:val('fJourney'),
+      driver_eta:skipped?NA:val('fEtaTime'), journey_min:NA,
       base_fare:skipped?NA:val('fBase'), minimum_fare:skipped?NA:val('fMin'),
       per_minute:skipped?NA:val('fPerMin'), per_mile:skipped?NA:val('fPerMile'),
       operating_fee:skipped?NA:val('fOpFee'), tolls_surcharges:skipped?NA:val('fToll'),
