@@ -41,23 +41,70 @@
   .msg.err{display:block;background:var(--danger-wash);color:var(--danger);}
   .msg.ok{display:block;background:#E1F5EE;color:var(--ok);}
   .foot{font-size:12px;color:var(--faint);margin-top:16px;text-align:center;line-height:1.5;}
+
+  .dblist{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
+  .dbbtn{width:100%;text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);
+    font-family:var(--body);font-size:14px;font-weight:500;padding:12px 14px;border-radius:var(--r-sm);
+    cursor:pointer;transition:border-color .12s,background .12s;}
+  .dbbtn:hover{border-color:var(--signal);background:var(--signal-wash);}
+  .dbbtn.active{border-color:var(--signal);background:var(--signal-wash);}
+  .addbtn{width:100%;text-align:center;border:1px dashed var(--line);background:transparent;color:var(--steel);
+    font-family:var(--body);font-size:13px;font-weight:500;padding:11px 14px;border-radius:var(--r-sm);
+    cursor:pointer;margin-top:4px;transition:border-color .12s,color .12s;}
+  .addbtn:hover{border-color:var(--signal);color:var(--signal);}
+  .backlink{font-size:12px;color:var(--faint);background:none;border:none;cursor:pointer;padding:0 0 14px;
+    font-family:var(--body);text-decoration:underline;}
+  .empty{font-size:13px;color:var(--faint);text-align:center;padding:8px 0 16px;}
+  .panel{display:none;}
+  .panel.open{display:block;}
 </style>
 </head>
 <body>
   <div class="box">
     <div class="mast"><h1>Fare Logger</h1><span class="sub">Zipo</span></div>
     <div class="card">
-      <div class="field">
-        <label for="email">Email</label>
-        <input type="email" id="email" autocomplete="username" placeholder="you@ridezipo.com" />
+
+      <!-- Step 1: pick or create a database -->
+      <div id="pickPanel" class="panel open">
+        <div id="dbList" class="dblist"></div>
+        <div id="dbListEmpty" class="empty" style="display:none;">No databases yet — create the first one below.</div>
+        <button class="addbtn" id="showCreate">+ Create a new database</button>
       </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" />
+
+      <!-- Step 2: sign in to a chosen database -->
+      <div id="signinPanel" class="panel">
+        <button class="backlink" id="signinBack">&larr; Choose a different database</button>
+        <div class="field">
+          <label>Database</label>
+          <input type="text" id="signinName" disabled />
+        </div>
+        <div class="field">
+          <label for="signinPassword">Password</label>
+          <input type="password" id="signinPassword" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <button class="primary" id="signInBtn">Sign in</button>
       </div>
-      <button class="primary" id="signIn">Sign in</button>
+
+      <!-- Step 3: create a new database -->
+      <div id="createPanel" class="panel">
+        <button class="backlink" id="createBack">&larr; Choose a different database</button>
+        <div class="field">
+          <label for="createName">New database name</label>
+          <input type="text" id="createName" placeholder="e.g. Alice" />
+        </div>
+        <div class="field">
+          <label for="createPassword">Password</label>
+          <input type="password" id="createPassword" autocomplete="new-password" placeholder="••••••••" />
+        </div>
+        <div class="field">
+          <label for="createPassword2">Confirm password</label>
+          <input type="password" id="createPassword2" autocomplete="new-password" placeholder="••••••••" />
+        </div>
+        <button class="primary" id="createBtn">Create database</button>
+      </div>
+
       <div class="msg" id="msg"></div>
-      <div class="foot">Access is invite-only. If you need an account, ask the administrator to add you.</div>
+      <div class="foot">Each database is its own private set of logged fares. Pick yours, or create a new one.</div>
     </div>
   </div>
 
@@ -67,31 +114,110 @@
     const cfg = window.ZIPO_CONFIG || {};
     const client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const $ = id => document.getElementById(id);
-    const msg = (text, kind) => { const m=$('msg'); m.textContent=text; m.className='msg '+kind; };
+    const msg = (text, kind) => { const m=$('msg'); m.textContent=text; m.className='msg '+(kind||''); };
+    const clearMsg = () => { $('msg').textContent=''; $('msg').className='msg'; };
 
-    // Already signed in? Skip straight to the app.
-    client.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.replace('index.html');
-    });
+    // The "database" a user picks is really just a dedicated Supabase Auth
+    // account. The email behind it is a deterministic slug of the chosen
+    // name, so no real inbox is needed and sign-in only depends on password.
+    function deriveEmail(name){
+      const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+      return slug ? 'db-'+slug+'@zipo.internal' : '';
+    }
 
-    async function signIn() {
-      const email = $('email').value.trim();
-      const password = $('password').value;
-      if (!email || !password) { msg('Enter your email and password.', 'err'); return; }
-      $('signIn').disabled = true;
+    let databases = []; // [{name, email}]
+
+    function showPanel(id){
+      ['pickPanel','signinPanel','createPanel'].forEach(p=>$(p).classList.toggle('open', p===id));
+      clearMsg();
+    }
+
+    function renderList(){
+      const box = $('dbList');
+      box.innerHTML = '';
+      $('dbListEmpty').style.display = databases.length ? 'none' : 'block';
+      databases.forEach(db=>{
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'dbbtn'; b.textContent = db.name;
+        b.onclick = () => openSignin(db);
+        box.appendChild(b);
+      });
+    }
+
+    async function loadDatabases(){
+      const { data, error } = await client.from('databases').select('name,email').order('name');
+      if(error){ msg('Could not load database list: '+error.message, 'err'); return; }
+      databases = data || [];
+      renderList();
+    }
+
+    function openSignin(db){
+      $('signinName').value = db.name;
+      $('signinPassword').value = '';
+      $('signinPassword').dataset.email = db.email;
+      showPanel('signinPanel');
+      $('signinPassword').focus();
+    }
+
+    async function signIn(){
+      const email = $('signinPassword').dataset.email;
+      const password = $('signinPassword').value;
+      if(!password){ msg('Enter the password.', 'err'); return; }
+      $('signInBtn').disabled = true;
       msg('Signing in…', 'ok');
       const { error } = await client.auth.signInWithPassword({ email, password });
-      if (error) {
+      if(error){
         msg(error.message || 'Sign in failed.', 'err');
-        $('signIn').disabled = false;
+        $('signInBtn').disabled = false;
         return;
       }
       window.location.replace('index.html');
     }
 
-    $('signIn').onclick = signIn;
-    $('password').addEventListener('keydown', e => { if (e.key === 'Enter') signIn(); });
-    $('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('password').focus(); });
+    async function createDatabase(){
+      const name = $('createName').value.trim();
+      const password = $('createPassword').value;
+      const password2 = $('createPassword2').value;
+      if(!name){ msg('Give the database a name.', 'err'); return; }
+      const email = deriveEmail(name);
+      if(!email){ msg('That name has no usable characters — try adding letters or numbers.', 'err'); return; }
+      if(databases.some(db=>db.name.toLowerCase()===name.toLowerCase())){
+        msg('A database with that name already exists — choose it from the list to sign in instead.', 'err');
+        return;
+      }
+      if(password.length<6){ msg('Password must be at least 6 characters.', 'err'); return; }
+      if(password!==password2){ msg('Passwords do not match.', 'err'); return; }
+
+      $('createBtn').disabled = true;
+      msg('Creating…', 'ok');
+      const { data, error } = await client.auth.signUp({ email, password });
+      if(error){
+        msg(error.message || 'Could not create that database.', 'err');
+        $('createBtn').disabled = false;
+        return;
+      }
+      if(!data.session){
+        msg('Account created but needs email confirmation — ask the administrator to turn off "Confirm email" for this project in Supabase, then try again.', 'err');
+        $('createBtn').disabled = false;
+        return;
+      }
+      await client.from('databases').insert({ name, email });
+      window.location.replace('index.html');
+    }
+
+    $('showCreate').onclick = () => { $('createName').value=''; $('createPassword').value=''; $('createPassword2').value=''; showPanel('createPanel'); $('createName').focus(); };
+    $('signinBack').onclick = () => showPanel('pickPanel');
+    $('createBack').onclick = () => showPanel('pickPanel');
+    $('signInBtn').onclick = signIn;
+    $('createBtn').onclick = createDatabase;
+    $('signinPassword').addEventListener('keydown', e => { if(e.key==='Enter') signIn(); });
+    $('createPassword2').addEventListener('keydown', e => { if(e.key==='Enter') createDatabase(); });
+
+    // Already signed in? Skip straight to the app.
+    client.auth.getSession().then(({ data }) => {
+      if (data.session) { window.location.replace('index.html'); return; }
+      loadDatabases();
+    });
   </script>
 </body>
 </html>
