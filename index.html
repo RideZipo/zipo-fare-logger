@@ -498,12 +498,16 @@ const DEFAULT_FARE_BY_TIER = {
   "Executive":     {base:2.76, min:7.60, per_min:0.22, per_mile:1.57},
   "Executive XXL": {base:3.50, min:7.74, per_min:0.17, per_mile:1.86}
 };
+// Bump this whenever DEFAULT_FARE_BY_TIER values change above, so the next
+// page load force-reseeds the shared Supabase config with the new numbers
+// instead of leaving everyone's already-saved fareDefaults untouched.
+const FARE_DEFAULTS_VERSION = 2;
 
 function defaultCfg(){
   const fareDefaults={};
   DEFAULT_TIERS.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); });
   return { mode:'weighted', tiers:DEFAULT_TIERS.slice(),
-    weights:Object.assign({},DEFAULT_WEIGHTS), fareDefaults,
+    weights:Object.assign({},DEFAULT_WEIGHTS), fareDefaults, fareDefaultsVersion:FARE_DEFAULTS_VERSION,
     pairs:JSON.parse(JSON.stringify(DEFAULT_PAIRS)), pool:DEFAULT_PAIRS.map(p=>p.id) };
 }
 
@@ -517,16 +521,30 @@ function typeColor(type){
 // Ensures every tier in cfg.tiers has a fareDefaults entry, and migrates the
 // old single flat {base,min,per_min,per_mile} shape (from before defaults
 // were per-vehicle) into a per-tier object seeded with those same values.
+// Returns true if it changed cfg (so callers know to persist the result).
 function ensureFareDefaults(){
+  let changed=false;
   if(!cfg.fareDefaults || cfg.fareDefaults.base!==undefined){
     const shared = (cfg.fareDefaults && cfg.fareDefaults.base!==undefined) ? cfg.fareDefaults : DEFAULT_FARE;
     const perTier={};
     cfg.tiers.forEach(t=>{ perTier[t]=Object.assign({},shared); });
     cfg.fareDefaults=perTier;
+    changed=true;
   }
   cfg.tiers.forEach(t=>{
-    if(!cfg.fareDefaults[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE);
+    if(!cfg.fareDefaults[t]){ cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); changed=true; }
   });
+  // Force re-seed from code defaults when FARE_DEFAULTS_VERSION has been bumped,
+  // so a code change to DEFAULT_FARE_BY_TIER reaches everyone's shared config
+  // instead of being shadowed by values already saved in Supabase.
+  if(cfg.fareDefaultsVersion !== FARE_DEFAULTS_VERSION){
+    cfg.tiers.forEach(t=>{
+      if(DEFAULT_FARE_BY_TIER[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]);
+    });
+    cfg.fareDefaultsVersion=FARE_DEFAULTS_VERSION;
+    changed=true;
+  }
+  return changed;
 }
 
 async function load() {
@@ -537,10 +555,10 @@ async function load() {
   if(remote && remote.pairs){ cfg = remote; }
   else { cfg = defaultCfg(); firstRun=true; }   // no shared config yet
   if(!cfg || !cfg.pairs) cfg=defaultCfg();
-  ensureFareDefaults();
+  const fareDefaultsChanged=ensureFareDefaults();
   // Merge in any new default pairs shipped in code since the config was saved.
   const have=new Set(cfg.pairs.map(p=>p.id));
-  let changed=firstRun;
+  let changed=firstRun||fareDefaultsChanged;
   DEFAULT_PAIRS.forEach(dp=>{
     if(!have.has(dp.id)){ cfg.pairs.push(JSON.parse(JSON.stringify(dp))); cfg.pool.push(dp.id);
       if(cfg.weights[dp.type]===undefined) cfg.weights[dp.type]=DEFAULT_WEIGHTS[dp.type]||1.0; changed=true; }
