@@ -58,9 +58,10 @@ create index if not exists fare_entries_pair_idx       on public.fare_entries (p
 -- ---------------------------------------------------------------------------
 -- 2. Row Level Security
 -- ---------------------------------------------------------------------------
--- Turn RLS on, then grant a shared-feed policy: any *authenticated* user may
--- read every row and insert/update/delete rows. Anonymous (logged-out)
--- requests match no policy and are therefore denied.
+-- Each Supabase Auth account is one "database" (see section 4). RLS scopes
+-- every read/write to rows the signed-in account itself created, so one
+-- account's observations are never visible to another. Anonymous
+-- (logged-out) requests match no policy and are therefore denied.
 
 alter table public.fare_entries enable row level security;
 
@@ -69,38 +70,39 @@ drop policy if exists "authenticated can read all"   on public.fare_entries;
 drop policy if exists "authenticated can insert"     on public.fare_entries;
 drop policy if exists "authenticated can update all" on public.fare_entries;
 drop policy if exists "authenticated can delete all" on public.fare_entries;
+drop policy if exists "authenticated can read own"   on public.fare_entries;
+drop policy if exists "authenticated can update own" on public.fare_entries;
+drop policy if exists "authenticated can delete own" on public.fare_entries;
 
--- READ: every logged-in user sees everyone's entries (shared feed).
-create policy "authenticated can read all"
+-- READ: an account only sees the rows it created.
+create policy "authenticated can read own"
   on public.fare_entries
   for select
   to authenticated
-  using (true);
+  using (created_by = auth.uid());
 
--- INSERT: any logged-in user may add rows. The check pins created_by to the
--- caller so rows are always attributed to whoever inserted them.
+-- INSERT: any logged-in account may add rows. The check pins created_by to
+-- the caller so rows are always attributed to whoever inserted them.
 create policy "authenticated can insert"
   on public.fare_entries
   for insert
   to authenticated
   with check (created_by = auth.uid());
 
--- UPDATE: any logged-in user may edit any row (matches the app's edit UI).
--- If you'd rather restrict edits to the row's author, replace `using (true)`
--- with `using (created_by = auth.uid())` and do the same for delete below.
-create policy "authenticated can update all"
+-- UPDATE: an account may only edit its own rows.
+create policy "authenticated can update own"
   on public.fare_entries
   for update
   to authenticated
-  using (true)
-  with check (true);
+  using (created_by = auth.uid())
+  with check (created_by = auth.uid());
 
--- DELETE: any logged-in user may delete any row (matches the app's delete UI).
-create policy "authenticated can delete all"
+-- DELETE: an account may only delete its own rows.
+create policy "authenticated can delete own"
   on public.fare_entries
   for delete
   to authenticated
-  using (true);
+  using (created_by = auth.uid());
 
 -- ---------------------------------------------------------------------------
 -- 3. Shared app config
@@ -139,8 +141,53 @@ create policy "authenticated can write config"
   using (true)
   with check (true);
 
+-- ---------------------------------------------------------------------------
+-- 4. Database picker directory
+-- ---------------------------------------------------------------------------
+-- Each "database" on the login screen is really just one Supabase Auth
+-- account behind the scenes. This table is only a name -> backing-email
+-- directory so login.html can (a) list the databases that already exist and
+-- (b) look up which real auth email to sign in with, given the friendly name
+-- typed/picked in the UI. The email is a deterministic slug of the name
+-- (e.g. "Alice" -> db-alice@zipo.internal) with no real inbox behind it, so
+-- it isn't sensitive — the actual account password is what protects the data.
+
+create table if not exists public.databases (
+  name        text primary key,
+  email       text not null unique,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.databases enable row level security;
+
+drop policy if exists "anyone can list databases"       on public.databases;
+drop policy if exists "authenticated can add a database" on public.databases;
+
+-- READ: the picker needs this list before anyone is signed in.
+create policy "anyone can list databases"
+  on public.databases
+  for select
+  using (true);
+
+-- INSERT: only once signed in (i.e. right after creating the backing auth
+-- account via sign-up) may a database's directory entry be added.
+create policy "authenticated can add a database"
+  on public.databases
+  for insert
+  to authenticated
+  with check (true);
+
 -- ===========================================================================
--- Done. Reads/writes now require a signed-in user; all signed-in users share
--- one feed AND one config. Public sign-up is disabled separately in
--- Authentication settings (see the README).
+-- Done. Reads/writes now require a signed-in user; every account only ever
+-- sees the fare_entries rows it created (its own "database"), while
+-- app_config (the route/tier catalogue and fare defaults) stays shared
+-- across all of them.
+--
+-- IMPORTANT one-time manual step: in Supabase dashboard -> Authentication ->
+-- Providers -> Email, turn OFF "Confirm email". The picker's "create a new
+-- database" flow signs up accounts with synthetic emails (no real inbox), so
+-- they can never click a confirmation link — leaving confirmation ON would
+-- lock every new database out after creation. Public sign-up itself can stay
+-- restricted/invite-only as before; this app creates accounts through the
+-- authenticated signUp call, not public self-registration.
 -- ===========================================================================

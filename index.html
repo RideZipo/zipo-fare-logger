@@ -460,7 +460,12 @@ async function gateInit(){
   if(!data.session){ window.location.replace('login.html'); return; }
   CURRENT_USER = data.session.user;
   const who = document.getElementById('whoami');
-  if(who) who.innerHTML = '<span class="syncdot ok" id="syncDot"></span>'+(CURRENT_USER.email||'signed in');
+  let label = CURRENT_USER.email || 'signed in';
+  try {
+    const { data: dbRow } = await sb.from('databases').select('name').eq('email', CURRENT_USER.email).maybeSingle();
+    if(dbRow && dbRow.name) label = dbRow.name;
+  } catch(e){}
+  if(who) who.innerHTML = '<span class="syncdot ok" id="syncDot"></span>'+label;
   gate.style.display='none'; shell.style.display='block';
   sb.auth.onAuthStateChange((_e, session)=>{ if(!session) window.location.replace('login.html'); });
   document.getElementById('signOutBtn').onclick = async ()=>{ await sb.auth.signOut(); window.location.replace('login.html'); };

@@ -1,40 +1,43 @@
-# Zipo Fare Logger — shared web app
+# Zipo Fare Logger — multi-database web app
 
-A small, invite-only web app for logging London taxi fares over time so you can
-analyse when prices are highest. Every logged-in user reads and writes one
-**shared feed** of observations, stored in Supabase. There is no public sign-up:
-you add users by hand.
+A small web app for logging London taxi fares over time so you can analyse
+when prices are highest. On the login screen each person picks (or creates)
+their own **database** — under the hood each database is a dedicated Supabase
+Auth account, and Row Level Security scopes every read/write to the rows that
+account created. So each database's logged fares are private to whoever knows
+its password; nobody sees another database's entries.
 
 The app is plain static files — no build step, no framework, no bundler.
 
 ```
 index.html          the fare logger (gated: redirects to login if signed out)
-login.html          email + password sign-in
+login.html          database picker + "create a new database" + sign-in
 config.js           <-- paste your Supabase URL + anon key here
-supabase-setup.sql  table + Row Level Security policies (run once)
+supabase-setup.sql  tables + Row Level Security policies (run once)
 netlify.toml        Netlify deploy config
 README.md           this file
 ```
 
 ---
 
-## What each user can do
+## What each database can do
 
-- **Read:** every authenticated user sees *all* entries (the shared feed) and
-  the same shared config (route/tier catalogue, weights, sampling mode).
-- **Write:** every authenticated user can add, edit, and delete entries, and can
-  edit the shared config.
+- **Read/write:** an authenticated account only ever sees and edits the
+  `fare_entries` rows it created itself — RLS enforces this in Postgres, not
+  just the UI. The route/tier catalogue and fare defaults (the "Config" tab)
+  are the one exception: they're **shared across every database** so everyone
+  logs against the same route list and starting fare numbers.
 - **Deleting requires a password.** Both the big "Clear data" wipe *and*
   deleting a single row prompt for the password set near the top of the script
   in `index.html` (`DELETE_PASSWORD`, default `Zipo2026` — change it). This is a
-  UI safeguard against accidental deletion of shared data, not a security
-  boundary: it's visible in the page source, so change it before going live.
-- **Logged-out visitors:** see nothing — the page redirects to the login screen,
-  and the database rejects all reads/writes (enforced by RLS, not just the UI).
-
-> If you'd rather each user only edit/delete *their own* rows, see the note at
-> the bottom of `supabase-setup.sql` — it's a one-line change to the update and
-> delete policies.
+  UI safeguard against accidental deletion, not a security boundary: it's
+  visible in the page source, so change it before going live.
+- **Logged-out visitors:** see nothing — the page redirects to the login
+  screen, and the database rejects all reads/writes (enforced by RLS).
+- **Creating a new database** is self-service from the login screen (see
+  "How it fits together" below) — anyone who can reach the login page can spin
+  up a new one. If you want to lock that down instead, see the security note
+  at the bottom.
 
 ---
 
@@ -75,72 +78,40 @@ adds the shared-feed policies (authenticated users only).
    policies allow, and those require a signed-in user. **Never** paste the
    `service_role` key here; it bypasses RLS.
 
-### 4. Turn OFF public sign-up
+### 4. Turn ON sign-up, turn OFF email confirmation
 
-So that only people you add can get in:
+The login screen's "+ Create a new database" button creates its backing
+Supabase Auth account itself, straight from the browser (`auth.signUp`) — so,
+unlike a typical invite-only setup, sign-up needs to be **allowed**:
 
-1. Go to **Authentication** → **Sign In / Providers** (or **Providers**).
-2. Under **Email**, make sure the provider is **enabled** (users still need to
-   sign *in*), then turn **OFF** "Allow new users to sign up".
-   - Depending on the dashboard version this toggle is labelled
-     **"Allow new users to sign up"** and may live under
-     **Authentication → Settings** as **"Disable sign-ups" / "User Signups"**.
-     Whichever wording you see, set it so that self-service sign-up is **not**
-     allowed.
-3. (Optional but recommended) Under **Authentication → Providers → Email**, turn
-   **OFF** "Confirm email" so the accounts you create by hand are usable
-   immediately without an email round-trip. If you leave confirmation on, use the
-   "Auto Confirm User" option when creating each user (see next step).
+1. Go to **Authentication** → **Providers** (or **Sign In / Providers**).
+2. Under **Email**, make sure the provider is **enabled**, and that "Allow new
+   users to sign up" is **ON**. (Depending on dashboard version this may
+   instead live under **Authentication → Settings** as "Disable sign-ups" /
+   "User Signups" — whichever wording you see, make sure self-service sign-up
+   is **allowed**.)
+3. Under the same **Providers → Email** section, turn **OFF** "Confirm email".
+   Each new database's backing account uses a synthetic email address with no
+   real inbox behind it (derived from the database name), so it can never
+   click a confirmation link. Leaving confirmation on would lock every newly
+   created database out immediately after creation.
 
-### 5. Add users manually
+### 5. Adding databases
 
-You are the only one who can create accounts. Two ways:
+The normal way is self-service: on the login screen, click **"+ Create a new
+database"**, give it a name and password, and it's ready immediately — no
+dashboard work needed. Each name maps to one Supabase Auth account (see the
+`databases` table added by `supabase-setup.sql`), and RLS keeps its
+`fare_entries` rows private to that account.
 
-**A. Via the dashboard (easiest):**
+You can also create one by hand in **Authentication → Users → Add user**
+(tick **Auto Confirm User**) — if you do, also insert a matching row into the
+`databases` table (`name`, and `email` matching the account you created) so it
+shows up in the login picker.
 
-1. Go to **Authentication** → **Users** → **Add user** → **Create new user**.
-2. Enter the person's **email** and a **password**.
-3. Tick **Auto Confirm User** (so they can log in right away).
-4. Click **Create user**. Send them the email + password out-of-band; they can
-   sign in immediately.
-
-**B. Via an admin script (for adding several at once):**
-
-Run this locally with Node. It uses the **service_role** key, which must stay on
-your machine and never go into the app or Git.
-
-```bash
-# install once
-npm install @supabase/supabase-js
-
-# create add-user.mjs with the contents below, then:
-node add-user.mjs someone@ridezipo.com 'their-strong-password'
-```
-
-```js
-// add-user.mjs
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://abcdxyz.supabase.co';       // your Project URL
-const SERVICE_ROLE_KEY = 'eyJ...service_role...';         // Settings → API → service_role (keep secret!)
-
-const [, , email, password] = process.argv;
-if (!email || !password) {
-  console.error('Usage: node add-user.mjs <email> <password>');
-  process.exit(1);
-}
-
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-const { data, error } = await admin.auth.admin.createUser({
-  email,
-  password,
-  email_confirm: true,   // user can log in immediately
-});
-if (error) { console.error('Failed:', error.message); process.exit(1); }
-console.log('Created user:', data.user.email, data.user.id);
-```
-
-To remove someone's access later, delete them under **Authentication → Users**.
+To remove a database later, delete its account under **Authentication →
+Users** and delete its row from the `databases` table; its `fare_entries` rows
+can be deleted too if you no longer need that data.
 
 ### 6. Test locally (optional but wise)
 
@@ -183,36 +154,57 @@ feed is shared.
 
 ## How it fits together
 
-- **`login.html`** signs the user in with Supabase Auth (email + password). On
-  success it redirects to `index.html`. If already signed in, it skips straight
-  to the app.
+- **`login.html`** first shows a picker built from the `databases` table (just
+  a name → backing-email directory). Pick a name → enter its password → it
+  calls `auth.signInWithPassword` under that database's real account. Click
+  "+ Create a new database" → give it a name + password → it calls
+  `auth.signUp` with a synthetic email derived from the name, adds a row to
+  `databases`, and signs straight in. Either way, success redirects to
+  `index.html`. If already signed in, it skips straight to the app.
 - **`index.html`** checks for a session on load. No session → redirect to
-  `login.html`. With a session → it shows the logger, loads the shared feed, and
-  every capture/edit/delete writes straight to Supabase. A small coloured dot
-  next to your email shows sync status (green = synced, amber = saving,
-  red = error). "Sign out" ends the session and returns to login.
+  `login.html`. With a session → it shows the logger, loads that account's own
+  entries, and every capture/edit/delete writes straight to Supabase, scoped
+  to that account by RLS. The topbar shows the database's friendly name
+  (looked up from `databases` by email) next to a coloured sync dot (green =
+  synced, amber = saving, red = error). "Sign out" ends the session and
+  returns to the picker.
 - **Config** (the route/tier catalogue, weights, and sampling mode under
-  "Config") is **shared across all users** — stored as a single row in the
-  `app_config` table. Editing it writes through to Supabase (debounced), and
-  everyone picks up the change on their next load. Concurrent edits are
+  "Config") is **shared across every database** — stored as a single row in
+  the `app_config` table. Editing it writes through to Supabase (debounced),
+  and everyone picks up the change on their next load. Concurrent edits are
   last-write-wins.
-- **Export CSV** still works and now exports the shared feed you're viewing.
+- **Export CSV** still works and exports the currently signed-in database's
+  own entries.
 
 ## The data
 
 Table `fare_entries`, one row per logged vehicle-tier observation. Numeric fields
 are nullable — an empty input or a skipped tier is stored as `NULL` (cleaner for
-analysis than a sentinel string). Each row also records `created_by` (the user
-who logged it) and `created_at` (server timestamp), which are handy for
-"when are fares highest" queries in the Supabase SQL editor.
+analysis than a sentinel string). Each row records `created_by` (the account —
+i.e. database — that logged it) and `created_at` (server timestamp); RLS uses
+`created_by` to keep each database's rows private to itself.
+
+Table `databases`: just `name` (shown in the login picker) and `email` (the
+synthetic address behind that name's Supabase Auth account) — enough for the
+picker to list names and resolve which account to sign in as. It holds no
+fare data itself.
 
 ## Security notes
 
-- Access control is enforced by **Row Level Security in Postgres**, not just the
-  UI. Even someone holding the anon key and hitting the API directly gets nothing
-  without a valid signed-in session.
+- Row-level isolation is enforced by **Row Level Security in Postgres**, not
+  just the UI: an authenticated request can only read/write `fare_entries`
+  rows where `created_by` matches its own account, regardless of what the
+  client asks for.
 - The **anon key in `config.js` is meant to be public.** The key that must stay
-  secret is the **service_role** key — keep it off the web app and out of any
-  public repo.
-- Turning off public sign-up (step 4) is what makes this invite-only. Re-check
-  that toggle after any Supabase dashboard update.
+  secret is the **service_role** key — this app never needs it; keep it out of
+  the web app and out of any public repo.
+- **Self-service database creation is open to anyone who can reach the login
+  page** (step 4 requires sign-up to be enabled) — there's no invite gate on
+  it. Each new database's data is still private once created (RLS), but
+  someone could create junk databases. If you'd rather lock creation down to
+  an admin instead, disable public sign-up again (undoing step 4) and create
+  each database's account by hand as described in step 5, adding a matching
+  row to `databases` yourself.
+- **Deleting requires a password** (`DELETE_PASSWORD` in `index.html`) is a UI
+  safeguard only, visible in the page source — change it before going live,
+  but don't rely on it as real access control.
