@@ -106,6 +106,7 @@
     border-radius:20px;font-size:12px;font-weight:500;background:var(--card);}
   .tag button{border:none;background:none;padding:0;cursor:pointer;color:var(--faint);font-size:15px;line-height:1;}
   .tag button:hover{color:var(--danger);}
+  .tag-active{border-color:var(--signal);background:var(--signal-wash);}
   .miniform{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
   .pairrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
     padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:13px;}
@@ -267,9 +268,14 @@
       </div>
 
       <div class="sub">
-        <h3>Fare defaults <span class="muted" style="font-weight:400;">· per vehicle type, for the Default button</span></h3>
-        <div id="fareDefaultsByTier"></div>
-        <div class="muted" style="margin-top:4px;">Tapping Default in the fare breakdown fills these four fields using whichever vehicle you're currently logging. Operating fee and tolls are never auto-filled.</div>
+        <h3>Fare defaults <span class="muted" style="font-weight:400;">· quick-fill presets for the fare breakdown</span></h3>
+        <div id="farePresetTabs" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;"></div>
+        <div class="row">
+          <input type="text" id="newPreset" placeholder="Add a preset (e.g. AM Default, PM Default)" />
+          <button id="addPreset" class="btn">Add</button>
+        </div>
+        <div id="fareDefaultsByTier" style="margin-top:10px;"></div>
+        <div class="muted" style="margin-top:4px;">Each preset appears as its own quick-fill button in the fare breakdown, filling these four fields using whichever vehicle you're currently logging. Operating fee and tolls are never auto-filled.</div>
       </div>
 
       <div class="sub">
@@ -345,7 +351,7 @@
       <div class="field"><label for="fEtaTime">ETA (e.g. 13:20)</label><input type="time" id="fEtaTime" /></div>
     </div>
 
-    <div class="grouplabel">Fare breakdown <button id="fillDefaults" class="btn small" style="margin-left:auto;font-size:11px;padding:4px 10px;">Default</button></div>
+    <div class="grouplabel">Fare breakdown <span id="fillDefaultsRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;"></span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">
       <div class="field"><label for="fBase">Base fare (£)</label><input type="number" id="fBase" inputmode="decimal" step="0.01" placeholder="1.87" /></div>
       <div class="field"><label for="fMin">Minimum fare (£)</label><input type="number" id="fMin" inputmode="decimal" step="0.01" placeholder="4.30" /></div>
@@ -376,8 +382,7 @@ const ZCFG = window.ZIPO_CONFIG || {};
 const sb = window.supabase.createClient(ZCFG.SUPABASE_URL, ZCFG.SUPABASE_ANON_KEY);
 let CURRENT_USER = null;
 const TABLE = 'fare_entries';
-const CONFIG_TABLE = 'app_config';
-const CONFIG_ID = 'shared';   // single shared config row
+const CONFIG_TABLE = 'app_config';   // one row per account, keyed by user_id
 let _cfgSaveTimer = null;
 
 function setSync(state){ const el=document.getElementById('syncDot'); if(el) el.className='syncdot '+(state||''); }
@@ -486,8 +491,8 @@ const DELETE_PASSWORD = '!Zipo2026!';
 // ---------------------------------------------------------------------
 const DEFAULT_PAIRS = [{"id":"CC01","type":"central-central","o":"Oxford Circus","d":"Bank","olat":51.5152,"olng":-0.1418,"dlat":51.5133,"dlng":-0.0886,"opc":"W1B 3AG","dpc":"EC2R 8AH"},{"id":"CC02","type":"central-central","o":"King's Cross","d":"Waterloo","olat":51.5308,"olng":-0.1238,"dlat":51.5033,"dlng":-0.1145,"opc":"N1C 4AA","dpc":"SE1 8SW"},{"id":"CC03","type":"central-central","o":"Knightsbridge","d":"Liverpool Street","olat":51.5015,"olng":-0.1607,"dlat":51.5178,"dlng":-0.0823,"opc":"SW1X 7RJ","dpc":"EC2M 7PP"},{"id":"CC04","type":"central-central","o":"Victoria","d":"Shoreditch","olat":51.4952,"olng":-0.1441,"dlat":51.5265,"dlng":-0.0775,"opc":"SW1V 1JU","dpc":"E1 6JN"},{"id":"CC05","type":"central-central","o":"Marylebone","d":"London Bridge","olat":51.5225,"olng":-0.1631,"dlat":51.5049,"dlng":-0.0863,"opc":"NW1 5LA","dpc":"SE1 9SG"},{"id":"SC01","type":"suburb-central","o":"Clapham Common","d":"Bank","olat":51.4618,"olng":-0.1382,"dlat":51.5133,"dlng":-0.0886,"opc":"SW4 9DE","dpc":"EC2R 8AH"},{"id":"SC02","type":"suburb-central","o":"Camden Town","d":"Oxford Circus","olat":51.539,"olng":-0.1426,"dlat":51.5152,"dlng":-0.1418,"opc":"NW1 8AH","dpc":"W1B 3AG"},{"id":"SC03","type":"suburb-central","o":"Brixton","d":"Waterloo","olat":51.4626,"olng":-0.1145,"dlat":51.5033,"dlng":-0.1145,"opc":"SW2 1RW","dpc":"SE1 8SW"},{"id":"SC04","type":"suburb-central","o":"Wembley","d":"Soho","olat":51.5519,"olng":-0.2963,"dlat":51.5137,"dlng":-0.134,"opc":"HA9 0WS","dpc":"W1D 3QF"},{"id":"SC05","type":"suburb-central","o":"Richmond","d":"Bank","olat":51.4613,"olng":-0.3037,"dlat":51.5133,"dlng":-0.0886,"opc":"TW9 1ND","dpc":"EC2R 8AH"},{"id":"AP01","type":"airport","o":"Heathrow T5","d":"Bank","olat":51.4723,"olng":-0.4894,"dlat":51.5133,"dlng":-0.0886,"opc":"TW6 2GA","dpc":"EC2R 8AH"},{"id":"AP02","type":"airport","o":"Heathrow T4","d":"Victoria","olat":51.4595,"olng":-0.446,"dlat":51.4952,"dlng":-0.1441,"opc":"TW6 3XA","dpc":"SW1V 1JU"},{"id":"AP03","type":"airport","o":"London City Airport","d":"Canary Wharf","olat":51.5053,"olng":0.0553,"dlat":51.5054,"dlng":-0.0235,"opc":"E16 2PX","dpc":"E14 5AB"},{"id":"AP04","type":"airport","o":"Heathrow T2/3","d":"Paddington","olat":51.4713,"olng":-0.4525,"dlat":51.5154,"dlng":-0.1755,"opc":"TW6 1EW","dpc":"W2 1HQ"},{"id":"AP05","type":"airport","o":"London City Airport","d":"Liverpool Street","olat":51.5053,"olng":0.0553,"dlat":51.5178,"dlng":-0.0823,"opc":"E16 2PX","dpc":"EC2M 7PP"},{"id":"SS01","type":"suburb-suburb","o":"Clapham Common","d":"Brixton","olat":51.4618,"olng":-0.1382,"dlat":51.4626,"dlng":-0.1145,"opc":"SW4 9DE","dpc":"SW2 1RW"},{"id":"SS02","type":"suburb-suburb","o":"Wembley","d":"Ealing Broadway","olat":51.5519,"olng":-0.2963,"dlat":51.515,"dlng":-0.3018,"opc":"HA9 0WS","dpc":"W5 5JY"},{"id":"SS03","type":"suburb-suburb","o":"Richmond","d":"Brixton","olat":51.4613,"olng":-0.3037,"dlat":51.4626,"dlng":-0.1145,"opc":"TW9 1ND","dpc":"SW2 1RW"},{"id":"SS04","type":"suburb-suburb","o":"Enfield Town","d":"Wood Green","olat":51.6523,"olng":-0.0807,"dlat":51.5975,"dlng":-0.1097,"opc":"EN1 1YX","dpc":"N22 6XF"},{"id":"SS05","type":"suburb-suburb","o":"Brixton","d":"New Cross Gate","olat":51.4626,"olng":-0.1145,"dlat":51.4757,"dlng":-0.0396,"opc":"SW2 1RW","dpc":"SE14 5PL"},{"id":"EV01","type":"event-zone","o":"The O2 Greenwich","d":"Bank","olat":51.503,"olng":0.0032,"dlat":51.5133,"dlng":-0.0886,"opc":"SE10 0DX","dpc":"EC2R 8AH"},{"id":"EV02","type":"event-zone","o":"Wembley Stadium","d":"Oxford Circus","olat":51.556,"olng":-0.2795,"dlat":51.5152,"dlng":-0.1418,"opc":"HA9 0WS","dpc":"W1B 3AG"},{"id":"EV03","type":"event-zone","o":"Tottenham Hotspur Stadium","d":"King's Cross","olat":51.6043,"olng":-0.0665,"dlat":51.5308,"dlng":-0.1238,"opc":"N17 0BX","dpc":"N1C 4AA"},{"id":"EV04","type":"event-zone","o":"Brixton Academy","d":"Waterloo","olat":51.4657,"olng":-0.1153,"dlat":51.5033,"dlng":-0.1145,"opc":"SW9 9SL","dpc":"SE1 8SW"},{"id":"EV05","type":"event-zone","o":"The O2 Greenwich","d":"Canary Wharf","olat":51.503,"olng":0.0032,"dlat":51.5054,"dlng":-0.0235,"opc":"SE10 0DX","dpc":"E14 5AB"},{"id":"CX01","type":"cross-city","o":"Fulham Broadway","d":"Canary Wharf","olat":51.4804,"olng":-0.195,"dlat":51.5054,"dlng":-0.0235,"opc":"SW6 1BY","dpc":"E14 5AB"},{"id":"CX02","type":"cross-city","o":"Putney","d":"Stratford","olat":51.461,"olng":-0.216,"dlat":51.5416,"dlng":-0.0034,"opc":"SW15 1SL","dpc":"E15 1AZ"},{"id":"SW01","type":"sw-residential","o":"Fulham Broadway","d":"Wimbledon","olat":51.4804,"olng":-0.195,"dlat":51.4214,"dlng":-0.2064,"opc":"SW6 1BY","dpc":"SW19 7NL"},{"id":"SW02","type":"sw-residential","o":"Battersea Park","d":"Croydon","olat":51.4791,"olng":-0.1465,"dlat":51.3762,"dlng":-0.0982,"opc":"SW11 4NJ","dpc":"CR0 1EA"},{"id":"SW03","type":"sw-residential","o":"Chiswick","d":"Sloane Square","olat":51.4933,"olng":-0.261,"dlat":51.4924,"dlng":-0.1565,"opc":"W4 2ND","dpc":"SW1W 8EE"}];
 // Bump this whenever an existing entry in DEFAULT_PAIRS is edited (e.g. a
-// postcode fixed), so the next load force-syncs that pair's fields into the
-// shared Supabase config instead of leaving the already-saved copy stale.
+// postcode fixed), so the next load force-syncs that pair's fields into each
+// account's own config instead of leaving the already-saved copy stale.
 const PAIRS_VERSION = 2;
 const DEFAULT_TIERS = ["UberX","Electric","UberXL", "Executive", "Executive XXL"];
 const DEFAULT_WEIGHTS = {"central-central":1.4,"suburb-central":1.0,"airport":0.8,"suburb-suburb":0.8,"event-zone":1.4,"cross-city":1.1,"sw-residential":0.9};
@@ -496,6 +501,8 @@ const PALETTE = [["#EEEDFE","#3C3489"],["#E1F5EE","#085041"],["#E6F1FB","#0C447C
 let rows = [];
 let cur = null;
 let cfg = null;
+let editingPresetId = null;   // which fare-default preset is shown in Settings
+let renamingPresetId = null;  // which preset's tab is mid-rename
 const $ = id => document.getElementById(id);
 
 const DEFAULT_FARE = {base:1.78, min:4.30, per_min:0.08, per_mile:0.96};
@@ -507,15 +514,16 @@ const DEFAULT_FARE_BY_TIER = {
   "Executive XXL": {base:3.50, min:7.74, per_min:0.17, per_mile:1.86}
 };
 // Bump this whenever DEFAULT_FARE_BY_TIER values change above, so the next
-// page load force-reseeds the shared Supabase config with the new numbers
-// instead of leaving everyone's already-saved fareDefaults untouched.
+// page load force-reseeds each account's own config with the new numbers
+// instead of leaving that account's already-saved fareDefaults untouched.
 const FARE_DEFAULTS_VERSION = 2;
 
 function defaultCfg(){
   const fareDefaults={};
   DEFAULT_TIERS.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); });
   return { mode:'weighted', tiers:DEFAULT_TIERS.slice(),
-    weights:Object.assign({},DEFAULT_WEIGHTS), fareDefaults, fareDefaultsVersion:FARE_DEFAULTS_VERSION,
+    weights:Object.assign({},DEFAULT_WEIGHTS),
+    farePresets:[{id:'default', name:'Default', fareDefaults}], fareDefaultsVersion:FARE_DEFAULTS_VERSION,
     pairs:JSON.parse(JSON.stringify(DEFAULT_PAIRS)), pool:DEFAULT_PAIRS.map(p=>p.id), pairsVersion:PAIRS_VERSION };
 }
 
@@ -526,44 +534,61 @@ function typeColor(type){
 
 
 
-// Ensures every tier in cfg.tiers has a fareDefaults entry, and migrates the
-// old single flat {base,min,per_min,per_mile} shape (from before defaults
-// were per-vehicle) into a per-tier object seeded with those same values.
+// Ensures cfg.farePresets exists (migrating the old single fareDefaults map
+// into one "Default" preset if needed) and that every preset has a
+// per-tier fareDefaults entry for every tier in cfg.tiers. Multiple presets
+// (e.g. "Default", "AM Default", "PM Default") each hold their own full set
+// of per-tier fare numbers and appear as separate quick-fill buttons.
 // Returns true if it changed cfg (so callers know to persist the result).
-function ensureFareDefaults(){
+function ensureFarePresets(){
   let changed=false;
-  if(!cfg.fareDefaults || cfg.fareDefaults.base!==undefined){
-    const shared = (cfg.fareDefaults && cfg.fareDefaults.base!==undefined) ? cfg.fareDefaults : DEFAULT_FARE;
-    const perTier={};
-    cfg.tiers.forEach(t=>{ perTier[t]=Object.assign({},shared); });
-    cfg.fareDefaults=perTier;
+  if(!Array.isArray(cfg.farePresets) || !cfg.farePresets.length){
+    const legacy = (cfg.fareDefaults && typeof cfg.fareDefaults==='object') ? cfg.fareDefaults : {};
+    cfg.farePresets=[{ id:'default', name:'Default', fareDefaults:legacy }];
+    delete cfg.fareDefaults;
     changed=true;
   }
-  cfg.tiers.forEach(t=>{
-    if(!cfg.fareDefaults[t]){ cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); changed=true; }
+  cfg.farePresets.forEach(preset=>{
+    if(!preset.fareDefaults) { preset.fareDefaults={}; changed=true; }
+    // migrate the old single flat {base,min,per_min,per_mile} shape (from
+    // before defaults were per-vehicle) into a per-tier object.
+    if(preset.fareDefaults.base!==undefined){
+      const shared=preset.fareDefaults;
+      const perTier={};
+      cfg.tiers.forEach(t=>{ perTier[t]=Object.assign({},shared); });
+      preset.fareDefaults=perTier;
+      changed=true;
+    }
+    cfg.tiers.forEach(t=>{
+      if(!preset.fareDefaults[t]){ preset.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); changed=true; }
+    });
   });
   // Force re-seed from code defaults when FARE_DEFAULTS_VERSION has been bumped,
-  // so a code change to DEFAULT_FARE_BY_TIER reaches everyone's shared config
-  // instead of being shadowed by values already saved in Supabase.
-  if(cfg.fareDefaultsVersion !== FARE_DEFAULTS_VERSION){
+  // so a code change to DEFAULT_FARE_BY_TIER reaches this account's "Default"
+  // preset too, without touching any custom presets (AM/PM/etc) the account made.
+  const def = cfg.farePresets.find(p=>p.id==='default');
+  if(def && cfg.fareDefaultsVersion !== FARE_DEFAULTS_VERSION){
     cfg.tiers.forEach(t=>{
-      if(DEFAULT_FARE_BY_TIER[t]) cfg.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]);
+      if(DEFAULT_FARE_BY_TIER[t]) def.fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]);
     });
     cfg.fareDefaultsVersion=FARE_DEFAULTS_VERSION;
     changed=true;
+  }
+  if(!editingPresetId || !cfg.farePresets.some(p=>p.id===editingPresetId)){
+    editingPresetId = cfg.farePresets[0] ? cfg.farePresets[0].id : null;
   }
   return changed;
 }
 
 async function load() {
-  // Config is now shared across all users via Supabase (last-write-wins).
+  // Config is private per account, stored in this account's own Supabase row.
   let remote=null;
   try { remote = await loadConfig(); } catch(e){}
   let firstRun=false;
   if(remote && remote.pairs){ cfg = remote; }
-  else { cfg = defaultCfg(); firstRun=true; }   // no shared config yet
+  else { cfg = defaultCfg(); firstRun=true; }   // no config saved for this account yet
   if(!cfg || !cfg.pairs) cfg=defaultCfg();
-  const fareDefaultsChanged=ensureFareDefaults();
+  const fareDefaultsChanged=ensureFarePresets();
   // Merge in any new default pairs shipped in code since the config was saved.
   const have=new Set(cfg.pairs.map(p=>p.id));
   let changed=firstRun||fareDefaultsChanged;
@@ -573,7 +598,7 @@ async function load() {
   });
   // Force re-sync fields for existing default pairs when PAIRS_VERSION has
   // been bumped, so edits to DEFAULT_PAIRS (e.g. a corrected postcode) reach
-  // everyone's shared config instead of being shadowed by the saved copy.
+  // this account's config too instead of being shadowed by the saved copy.
   if(cfg.pairsVersion !== PAIRS_VERSION){
     const byId={}; DEFAULT_PAIRS.forEach(dp=>byId[dp.id]=dp);
     cfg.pairs.forEach(p=>{
@@ -585,7 +610,7 @@ async function load() {
     changed=true;
   }
   buildSettings();
-  // Seed / update the shared row so everyone converges on the same catalogue.
+  // Seed / update this account's own row with any catalogue changes shipped in code.
   if(changed) persistCfg();
   await loadRows();
   render();
@@ -598,26 +623,28 @@ async function loadRows(){
 }
 async function saveRows(){ /* per-row persistence handles this */ }
 
-// Load the single shared config row from Supabase (null if not created yet).
+// Load this account's own config row from Supabase (null if not created yet).
 async function loadConfig(){
-  const { data, error } = await sb.from(CONFIG_TABLE).select('data').eq('id', CONFIG_ID).maybeSingle();
+  if(!CURRENT_USER) return null;
+  const { data, error } = await sb.from(CONFIG_TABLE).select('data').eq('user_id', CURRENT_USER.id).maybeSingle();
   if(error){ flash('Config load failed: '+error.message); return null; }
   return data ? data.data : null;
 }
 
-// Upsert the shared config row (last-write-wins). Debounced so rapid edits
-// (typing a weight, ticking pairs) don't fire a request per keystroke.
+// Upsert this account's own config row. Debounced so rapid edits (typing a
+// weight, ticking pairs) don't fire a request per keystroke.
 async function persistCfg(){
+  if(!CURRENT_USER) return;
   clearTimeout(_cfgSaveTimer);
   _cfgSaveTimer = setTimeout(async ()=>{
     setSync('busy');
-    const payload = { id: CONFIG_ID, data: cfg, updated_by: CURRENT_USER ? CURRENT_USER.id : null, updated_at: new Date().toISOString() };
+    const payload = { user_id: CURRENT_USER.id, data: cfg, updated_at: new Date().toISOString() };
     const { error } = await sb.from(CONFIG_TABLE).upsert(payload);
     if(error){ setSync('err'); flash('Config sync failed: '+error.message); return; }
     setSync('ok');
   }, 500);
 }
-// Config edits are shared: write through to Supabase (debounced).
+// Config edits are private to this account: write through to Supabase (debounced).
 async function saveCfg(){ persistCfg(); }
 
 function buildSettings(){
@@ -628,11 +655,14 @@ function buildSettings(){
 }
 
 function buildFareDefaults(){
-  ensureFareDefaults();
+  ensureFarePresets();
+  buildFarePresetTabs();
   const box=$('fareDefaultsByTier'); box.innerHTML='';
+  const preset = cfg.farePresets.find(p=>p.id===editingPresetId) || cfg.farePresets[0];
+  if(!preset){ box.innerHTML='<span class="muted">No fare-default presets yet — add one above.</span>'; return; }
   if(!cfg.tiers.length){ box.innerHTML='<span class="muted">Add a car type above to set its defaults.</span>'; return; }
   cfg.tiers.forEach(t=>{
-    const d=cfg.fareDefaults[t];
+    const d=preset.fareDefaults[t];
     const wrap=document.createElement('div');
     wrap.style.cssText='border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;';
     wrap.innerHTML =
@@ -648,21 +678,73 @@ function buildFareDefaults(){
   box.querySelectorAll('.fdInput').forEach(inp=>{
     inp.onchange=e=>{
       const tier=e.target.getAttribute('data-tier'), key=e.target.getAttribute('data-key');
-      if(!cfg.fareDefaults[tier]) cfg.fareDefaults[tier]=Object.assign({},DEFAULT_FARE);
-      cfg.fareDefaults[tier][key]=parseFloat(e.target.value)||0;
+      if(!preset.fareDefaults[tier]) preset.fareDefaults[tier]=Object.assign({},DEFAULT_FARE);
+      preset.fareDefaults[tier][key]=parseFloat(e.target.value)||0;
       saveCfg();
     };
   });
 }
 
-function fillFareDefaults(){
+// Tabs to pick which preset is being edited below, plus rename/delete per tab.
+function buildFarePresetTabs(){
+  const box=$('farePresetTabs'); box.innerHTML='';
+  cfg.farePresets.forEach(p=>{
+    const s=document.createElement('span');
+    s.className='tag'+(p.id===editingPresetId?' tag-active':'');
+    if(renamingPresetId===p.id){
+      const inp=document.createElement('input'); inp.type='text'; inp.value=p.name;
+      inp.style.cssText='width:110px;font-size:12px;padding:2px 4px;';
+      const commit=()=>{ const v=inp.value.trim(); if(v) p.name=v; renamingPresetId=null; saveCfg(); buildFareDefaults(); };
+      inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); commit(); } if(e.key==='Escape'){ renamingPresetId=null; buildFareDefaults(); } };
+      inp.onblur=commit;
+      s.appendChild(inp);
+      box.appendChild(s);
+      inp.focus(); inp.select();
+      return;
+    }
+    const nameSpan=document.createElement('span'); nameSpan.textContent=p.name; nameSpan.style.cursor='pointer';
+    nameSpan.onclick=()=>{ editingPresetId=p.id; buildFareDefaults(); };
+    s.appendChild(nameSpan);
+    const renameBtn=document.createElement('button'); renameBtn.setAttribute('aria-label','rename'); renameBtn.textContent='✎';
+    renameBtn.onclick=e=>{ e.stopPropagation(); renamingPresetId=p.id; buildFareDefaults(); };
+    s.appendChild(renameBtn);
+    const delBtn=document.createElement('button'); delBtn.setAttribute('aria-label','remove'); delBtn.textContent='×';
+    delBtn.onclick=e=>{
+      e.stopPropagation();
+      cfg.farePresets=cfg.farePresets.filter(x=>x.id!==p.id);
+      if(editingPresetId===p.id) editingPresetId = cfg.farePresets[0] ? cfg.farePresets[0].id : null;
+      saveCfg(); buildFareDefaults();
+    };
+    s.appendChild(delBtn);
+    box.appendChild(s);
+  });
+  if(!cfg.farePresets.length) box.innerHTML='<span class="muted">No presets yet — add one below.</span>';
+}
+
+// Populates the quick-fill button row in the fare breakdown, one per preset.
+function buildFillDefaultsRow(){
+  const box=$('fillDefaultsRow'); if(!box) return;
+  ensureFarePresets();
+  box.innerHTML='';
+  cfg.farePresets.forEach(p=>{
+    const b=document.createElement('button'); b.type='button'; b.className='btn small';
+    b.style.cssText='font-size:11px;padding:4px 10px;';
+    b.textContent=p.name;
+    b.onclick=()=>fillFareDefaults(p.id);
+    box.appendChild(b);
+  });
+}
+
+function fillFareDefaults(presetId){
   if(!cur){ flash('Start an observation first.'); return; }
   const tier=cur.tiers[cur.tierIdx];
-  ensureFareDefaults();
-  const d=cfg.fareDefaults[tier] || DEFAULT_FARE;
+  ensureFarePresets();
+  const preset = cfg.farePresets.find(p=>p.id===presetId) || cfg.farePresets[0];
+  if(!preset){ flash('No fare-default presets set up.'); return; }
+  const d=preset.fareDefaults[tier] || DEFAULT_FARE;
   $('fBase').value=d.base; $('fMin').value=d.min;
   $('fPerMin').value=d.per_min; $('fPerMile').value=d.per_mile;
-  flash(tier+' defaults filled.');
+  flash(preset.name+' defaults filled for '+tier+'.');
 }
 
 function buildTierTags(){
@@ -867,11 +949,13 @@ function showTier(){
   cur.tiers.forEach((_,i)=>{ const s=document.createElement('span');
     s.className = i<cur.tierIdx?'done':(i===cur.tierIdx?'on':''); dots.appendChild(s); });
   ['fPrice','fEta','fEtaTime','fBase','fMin','fPerMin','fPerMile','fOpFee','fToll','fNote'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
-  // Placeholders track this tier's fare defaults (Settings customization included).
-  ensureFareDefaults();
-  const tierFare=cfg.fareDefaults[cur.tiers[cur.tierIdx]] || DEFAULT_FARE_BY_TIER[cur.tiers[cur.tierIdx]] || DEFAULT_FARE;
+  // Placeholders track the "Default" preset's fare defaults (Settings customization included).
+  ensureFarePresets();
+  const basePreset = cfg.farePresets.find(p=>p.id==='default') || cfg.farePresets[0];
+  const tierFare=(basePreset && basePreset.fareDefaults[cur.tiers[cur.tierIdx]]) || DEFAULT_FARE_BY_TIER[cur.tiers[cur.tierIdx]] || DEFAULT_FARE;
   $('fBase').placeholder=tierFare.base; $('fMin').placeholder=tierFare.min;
   $('fPerMin').placeholder=tierFare.per_min; $('fPerMile').placeholder=tierFare.per_mile;
+  buildFillDefaultsRow();
   $('fPrice').focus();
 }
 
@@ -1155,7 +1239,6 @@ function hideUndo(){
 }
 
 $('startBtn').onclick=startObs;
-$('fillDefaults').onclick=fillFareDefaults;
 $('nextBtn').onclick=()=>recordTier(false);
 $('skipBtn').onclick=()=>recordTier(true);
 $('abortBtn').onclick=finishObs;
@@ -1163,9 +1246,22 @@ $('cancelPick').onclick=()=>{ $('pickPair').style.display='none'; $('idle').styl
 $('exportBtn').onclick=exportCSV;
 $('clearBtn').onclick=clearAll;
 $('addTier').onclick=()=>{ const v=$('newTier').value.trim(); if(!v) return;
-  if(!cfg.tiers.includes(v)){ cfg.tiers.push(v); if(!cfg.fareDefaults[v]) cfg.fareDefaults[v]=Object.assign({},DEFAULT_FARE); }
+  if(!cfg.tiers.includes(v)){
+    cfg.tiers.push(v);
+    cfg.farePresets.forEach(p=>{ if(!p.fareDefaults[v]) p.fareDefaults[v]=Object.assign({},DEFAULT_FARE_BY_TIER[v]||DEFAULT_FARE); });
+  }
   $('newTier').value=''; saveCfg(); buildTierTags(); buildFareDefaults(); };
 $('newTier').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('addTier').click(); } });
+$('addPreset').onclick=()=>{
+  const name=$('newPreset').value.trim(); if(!name) return;
+  const id='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const fareDefaults={};
+  cfg.tiers.forEach(t=>{ fareDefaults[t]=Object.assign({},DEFAULT_FARE_BY_TIER[t]||DEFAULT_FARE); });
+  cfg.farePresets.push({id,name,fareDefaults});
+  editingPresetId=id;
+  $('newPreset').value=''; saveCfg(); buildFareDefaults();
+};
+$('newPreset').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('addPreset').click(); } });
 $('addPair').onclick=addPair;
 $('allPairs').onclick=()=>{ cfg.pool=cfg.pairs.map(p=>p.id); saveCfg(); buildPairList(); };
 $('noPairs').onclick=()=>{ cfg.pool=[]; saveCfg(); buildPairList(); };

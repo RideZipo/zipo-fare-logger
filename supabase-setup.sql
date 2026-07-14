@@ -105,41 +105,69 @@ create policy "authenticated can delete own"
   using (created_by = auth.uid());
 
 -- ---------------------------------------------------------------------------
--- 3. Shared app config
+-- 3. Per-account app config
 -- ---------------------------------------------------------------------------
--- The route/tier catalogue, weights, sampling mode and fare defaults are now
--- shared across all users instead of living in each browser. It's a single
--- JSON blob in one row (id = 'shared'); the app upserts it on any config edit
--- (last-write-wins) and reads it on startup.
+-- The route/tier catalogue, weights, sampling mode and fare defaults are one
+-- JSON blob per account (one row per auth user, keyed by user_id). The app
+-- upserts the caller's own row on any config edit and reads only its own row
+-- on startup — changing defaults on one account never touches another's.
+
+-- One-time migration for installs created before this change: the old
+-- schema had a single row (id = 'shared') read/written by every account.
+-- This copies that row's data into a fresh per-account row for each existing
+-- auth user (so nobody's current catalogue/fare-defaults are lost), then
+-- drops the old text `id` column in favour of `user_id` as the primary key.
+-- Safe to re-run: it only fires while the legacy `id` column still exists.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'app_config' and column_name = 'id'
+  ) then
+    alter table public.app_config add column if not exists user_id uuid references auth.users (id) on delete cascade;
+
+    insert into public.app_config (id, user_id, data, updated_at)
+    select gen_random_uuid()::text, u.id, coalesce(s.data, '{}'::jsonb), now()
+    from auth.users u
+    left join (select data from public.app_config where id = 'shared' limit 1) s on true
+    where not exists (select 1 from public.app_config a2 where a2.user_id = u.id);
+
+    delete from public.app_config where id = 'shared' or user_id is null;
+    alter table public.app_config drop constraint if exists app_config_pkey;
+    alter table public.app_config drop column id;
+    alter table public.app_config drop column if exists updated_by;
+    alter table public.app_config add primary key (user_id);
+  end if;
+end $$;
 
 create table if not exists public.app_config (
-  id          text primary key,          -- always 'shared' for this app
-  data        jsonb not null,            -- the whole cfg object
-  updated_at  timestamptz not null default now(),
-  updated_by  uuid references auth.users (id) on delete set null
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  data        jsonb not null,            -- the whole cfg object, owned by this account
+  updated_at  timestamptz not null default now()
 );
 
 alter table public.app_config enable row level security;
 
-drop policy if exists "authenticated can read config"  on public.app_config;
-drop policy if exists "authenticated can write config" on public.app_config;
+drop policy if exists "authenticated can read config"      on public.app_config;
+drop policy if exists "authenticated can write config"     on public.app_config;
+drop policy if exists "authenticated can read own config"  on public.app_config;
+drop policy if exists "authenticated can write own config" on public.app_config;
 
--- READ: any logged-in user reads the shared config.
-create policy "authenticated can read config"
+-- READ: an account only sees its own config row.
+create policy "authenticated can read own config"
   on public.app_config
   for select
   to authenticated
-  using (true);
+  using (user_id = auth.uid());
 
--- WRITE (insert + update via upsert): any logged-in user may change the shared
--- config. `for all` covers insert/update/delete; the checks keep it permissive
--- since it's a single shared row the whole team maintains together.
-create policy "authenticated can write config"
+-- WRITE (insert + update via upsert): an account may only create/change its
+-- own config row. `for all` covers insert/update/delete.
+create policy "authenticated can write own config"
   on public.app_config
   for all
   to authenticated
-  using (true)
-  with check (true);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 -- ---------------------------------------------------------------------------
 -- 4. Database picker directory
@@ -160,6 +188,13 @@ create table if not exists public.databases (
 
 alter table public.databases enable row level security;
 
+-- RLS policies alone aren't enough — Postgres also requires the base table
+-- privilege for a role before its policies are even considered. The anon
+-- role (used for the logged-out login picker) has no default grants on
+-- tables you create, so this must be explicit.
+grant select on public.databases to anon, authenticated;
+grant insert on public.databases to authenticated;
+
 drop policy if exists "anyone can list databases"       on public.databases;
 drop policy if exists "authenticated can add a database" on public.databases;
 
@@ -167,6 +202,7 @@ drop policy if exists "authenticated can add a database" on public.databases;
 create policy "anyone can list databases"
   on public.databases
   for select
+  to anon, authenticated
   using (true);
 
 -- INSERT: only once signed in (i.e. right after creating the backing auth
@@ -179,9 +215,9 @@ create policy "authenticated can add a database"
 
 -- ===========================================================================
 -- Done. Reads/writes now require a signed-in user; every account only ever
--- sees the fare_entries rows it created (its own "database"), while
--- app_config (the route/tier catalogue and fare defaults) stays shared
--- across all of them.
+-- sees the fare_entries rows it created (its own "database"), and app_config
+-- (the route/tier catalogue and fare defaults) is likewise private per
+-- account — changing one account's defaults never affects another's.
 --
 -- IMPORTANT one-time manual step: in Supabase dashboard -> Authentication ->
 -- Providers -> Email, turn OFF "Confirm email". The picker's "create a new
