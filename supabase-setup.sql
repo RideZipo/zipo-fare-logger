@@ -48,17 +48,36 @@ create table if not exists public.fare_entries (
 
   notes                 text default '',
 
-  -- snapshot of the Zipo Pricing Model's live signals (calendar, weather,
-  -- TfL, events, sports, rail, strikes, traffic — GET /v1/admin/signals)
-  -- at the moment this entry was logged. NULL = no snapshot was captured
-  -- (fetch failed, or the row predates this column) — never means "no
-  -- active signals". Captured once at insert time; never refreshed by edits.
-  signals_snapshot      jsonb
+  -- Zipo Pricing Model live signals for this entry's *pickup* H3 signal zone
+  -- only (not the whole-London dump), one column per signal source
+  -- (GET /v1/admin/signals, filtered to the pickup zone by the Netlify
+  -- signals-proxy function). Each is NULL when either no snapshot was
+  -- captured (fetch failed, or the row predates these columns) or that
+  -- source had no active signal in this entry's zone at logging time — the
+  -- two cases aren't distinguished; re-derive the pickup zone from
+  -- origin_lat/origin_lng if that distinction matters later. Captured once
+  -- at insert time; never refreshed by edits.
+  signals_weather       jsonb,
+  signals_tfl           jsonb,
+  signals_events        jsonb,
+  signals_sports        jsonb,
+  signals_rail          jsonb,
+  signals_strikes       jsonb,
+  signals_traffic       jsonb
 );
 
--- Additive migration for installs created before signals_snapshot existed.
--- Safe to re-run.
-alter table public.fare_entries add column if not exists signals_snapshot jsonb;
+-- Additive migration for installs created before the signals_* columns
+-- existed. Safe to re-run.
+alter table public.fare_entries add column if not exists signals_weather jsonb;
+alter table public.fare_entries add column if not exists signals_tfl jsonb;
+alter table public.fare_entries add column if not exists signals_events jsonb;
+alter table public.fare_entries add column if not exists signals_sports jsonb;
+alter table public.fare_entries add column if not exists signals_rail jsonb;
+alter table public.fare_entries add column if not exists signals_strikes jsonb;
+alter table public.fare_entries add column if not exists signals_traffic jsonb;
+-- Drop the earlier single-blob column if this install had it from a prior
+-- iteration of this feature (never shipped, so most installs won't).
+alter table public.fare_entries drop column if exists signals_snapshot;
 
 -- Helpful indexes for the shared feed and for time-of-day analysis.
 create index if not exists fare_entries_created_at_idx on public.fare_entries (created_at desc);

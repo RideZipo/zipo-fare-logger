@@ -400,12 +400,19 @@ function dbToRow(d){
     base_fare:na(d.base_fare), minimum_fare:na(d.minimum_fare),
     per_minute:na(d.per_minute), per_mile:na(d.per_mile),
     operating_fee:na(d.operating_fee), tolls_surcharges:na(d.tolls_surcharges),
-    notes:d.notes||'', signals_snapshot:(d.signals_snapshot===undefined?null:d.signals_snapshot) };
+    notes:d.notes||'',
+    // Reassembled from the 7 flat signals_* columns into one object so
+    // insertRow()/rowToDb() have a single resolved value to work with on
+    // restore/undo — never a Promise, never re-fetched.
+    _signals:{ weather:d.signals_weather??null, tfl:d.signals_tfl??null, events:d.signals_events??null,
+      sports:d.signals_sports??null, rail:d.signals_rail??null, strikes:d.signals_strikes??null,
+      traffic:d.signals_traffic??null } };
 }
 function rowToDb(r){
   const num = v => (v==='NaN'||v===''||v==null||isNaN(parseFloat(v))) ? null : parseFloat(v);
   const txt = v => (v==='NaN'||v==null||v==='') ? null : String(v);
   const co  = v => (v===''||v==null) ? null : v;
+  const s = r._signals || {};
   return { obs_date:r.date||null, obs_time:r.time||null,
     pair_id:r.pair_id||null, pair_type:r.pair_type||null,
     origin:r.origin||null, destination:r.destination||null,
@@ -416,18 +423,24 @@ function rowToDb(r){
     base_fare:num(r.base_fare), minimum_fare:num(r.minimum_fare),
     per_minute:num(r.per_minute), per_mile:num(r.per_mile),
     operating_fee:num(r.operating_fee), tolls_surcharges:num(r.tolls_surcharges),
-    notes:r.notes||'', signals_snapshot:(r.signals_snapshot===undefined?null:r.signals_snapshot) };
+    notes:r.notes||'',
+    signals_weather:s.weather??null, signals_tfl:s.tfl??null, signals_events:s.events??null,
+    signals_sports:s.sports??null, signals_rail:s.rail??null, signals_strikes:s.strikes??null,
+    signals_traffic:s.traffic??null };
 }
 
-// Best-effort fetch of the Zipo Pricing Model's current live signals
-// (weather, events, TfL, etc. — proxied so the API key never reaches the
-// browser). Never throws: resolves to null on any failure, and a fare entry
-// always saves even when this does.
-async function fetchSignalsSnapshot(){
+// Best-effort fetch of the Zipo Pricing Model's live signals for the H3
+// signal zone containing (lat, lng) — proxied so the API key never reaches
+// the browser, and pre-filtered server-side to just that zone (not the
+// whole-London dump). Never throws: resolves to null on any failure or
+// missing coordinates, and a fare entry always saves even when this does.
+async function fetchSignalsSnapshot(lat, lng){
+  if(lat==null || lng==null) return null;
   const ctrl = new AbortController();
-  const timer = setTimeout(()=>ctrl.abort(), 5000);
+  const timer = setTimeout(()=>ctrl.abort(), 8000);
   try{
-    const res = await fetch('/.netlify/functions/signals-proxy', { signal: ctrl.signal });
+    const url = '/.netlify/functions/signals-proxy?lat='+encodeURIComponent(lat)+'&lng='+encodeURIComponent(lng);
+    const res = await fetch(url, { signal: ctrl.signal });
     clearTimeout(timer);
     if(!res.ok) throw new Error('status '+res.status);
     return await res.json();
@@ -440,15 +453,15 @@ async function fetchSignalsSnapshot(){
 
 async function insertRow(row){
   setSync('busy');
-  // signals_snapshot is set one of three ways by the time we get here:
-  //  - absent entirely: no observation context supplied one (fallback) -> fetch fresh.
+  // _signals is set one of three ways by the time we get here:
+  //  - absent entirely: no observation context supplied one -> treat as no snapshot.
   //  - a Promise: recordTier() shared one fetch across every tier of the same
   //    observation (see beginWith/cur.signalsSnapshot) -> await it; awaiting an
   //    already-settled Promise multiple times (one per tier row) does not refetch.
   //  - an already-resolved value (object or null): a restore/undo row from dbToRow
   //    carrying its original snapshot -> use as-is, never refetch or overwrite.
-  if(!('signals_snapshot' in row)) row.signals_snapshot = await fetchSignalsSnapshot();
-  else if(row.signals_snapshot && typeof row.signals_snapshot.then==='function') row.signals_snapshot = await row.signals_snapshot;
+  if(!('_signals' in row)) row._signals = null;
+  else if(row._signals && typeof row._signals.then==='function') row._signals = await row._signals;
   const payload = rowToDb(row); payload.created_by = CURRENT_USER ? CURRENT_USER.id : null;
   const { data, error } = await sb.from(TABLE).insert(payload).select('id').single();
   if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
@@ -935,8 +948,9 @@ function beginWith(p){
   const now=new Date();
   cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice(),
     // One shared signals fetch for the whole observation (all tiers of this
-    // pair/date/time), not one per tier — see insertRow().
-    signalsSnapshot: fetchSignalsSnapshot() };
+    // pair/date/time), not one per tier — see insertRow(). Scoped to the
+    // pickup location's signal zone, not the whole-London dump.
+    signalsSnapshot: fetchSignalsSnapshot(p.olat, p.olng) };
   $('idle').style.display='none'; $('pickPair').style.display='none'; $('capture').style.display='block';
   renderPostcodes(p); showTier();
 }
@@ -1006,7 +1020,7 @@ function recordTier(skipped){
       operating_fee:skipped?NA:val('fOpFee'), tolls_surcharges:skipped?NA:val('fToll'),
       notes:($('fNote')?$('fNote').value:'')||'',
       // Shared across every tier of this observation — one fetch, not one per tier.
-      signals_snapshot:cur.signalsSnapshot };
+      _signals:cur.signalsSnapshot };
     rows.push(row); insertRow(row);
     cur.tierIdx++;
     if(cur.tierIdx>=cur.tiers.length) finishObs(); else showTier();

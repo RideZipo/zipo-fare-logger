@@ -19,12 +19,14 @@ netlify/functions/signals-proxy.js  server-side proxy to the Zipo Pricing Model'
 README.md                         this file
 ```
 
-Every logged fare also captures a snapshot of the Zipo Pricing Model's live
-signals (weather, active events, TfL disruptions, etc. — whatever's currently
-in its Redis cache) via `netlify/functions/signals-proxy.js`, so you can
-later correlate a logged fare against the conditions at that moment. This is
-best-effort: if the pricing model is unreachable, the fare still saves, just
-without a snapshot. See "Signals snapshot" below for setup.
+Every logged fare also captures the Zipo Pricing Model's live signals
+(weather, TfL, events, sports, rail, strikes, traffic — whatever's currently
+in its Redis cache) **for that fare's pickup location only** — not a
+London-wide dump — via `netlify/functions/signals-proxy.js`, so you can
+later correlate a logged fare against the conditions at that moment and
+location. This is best-effort: if the pricing model is unreachable, the fare
+still saves, just without a snapshot. See "Signals snapshot" below for
+setup.
 
 ---
 
@@ -160,9 +162,13 @@ feed is shared.
 
 ### 8. Signals snapshot (optional but recommended)
 
-Each logged fare captures a snapshot of the Zipo Pricing Model's live
-signals via a Netlify Function that keeps the pricing model's API key out of
-the browser. To enable it:
+Each logged fare captures the Zipo Pricing Model's live signals via a
+Netlify Function that keeps the pricing model's API key out of the browser.
+The function takes the observation's pickup `lat`/`lng`, resolves which H3
+signal zone that falls in (via `GET /v1/pricing`, discarding everything
+price-related from that response — only the zone is used), then fetches
+`GET /v1/admin/signals` and keeps just that one zone's data per source. To
+enable it:
 
 1. In Netlify: **Site configuration** → **Environment variables**, add:
    - `PRICING_MODEL_URL` — base URL of the Zipo Pricing Model API (e.g.
@@ -173,15 +179,22 @@ the browser. To enable it:
 2. Redeploy so the function picks up the new environment variables.
 
 If these aren't set, or the pricing model is unreachable when a fare is
-logged, the fare still saves — `signals_snapshot` is just stored as `NULL`
-for that row, and a small toast says so.
+logged, the fare still saves — the `signals_*` columns are just stored as
+`NULL` for that row, and a small toast says so.
 
-**Existing installs:** if your Supabase project was set up before this
-column existed, either re-run the whole `supabase-setup.sql` (safe, additive)
-or just run:
+**Existing installs:** if your Supabase project was set up before these
+columns existed, either re-run the whole `supabase-setup.sql` (safe,
+additive, and drops the older single-blob `signals_snapshot` column from an
+earlier iteration of this feature if present) or just run:
 
 ```sql
-alter table public.fare_entries add column if not exists signals_snapshot jsonb;
+alter table public.fare_entries add column if not exists signals_weather jsonb;
+alter table public.fare_entries add column if not exists signals_tfl jsonb;
+alter table public.fare_entries add column if not exists signals_events jsonb;
+alter table public.fare_entries add column if not exists signals_sports jsonb;
+alter table public.fare_entries add column if not exists signals_rail jsonb;
+alter table public.fare_entries add column if not exists signals_strikes jsonb;
+alter table public.fare_entries add column if not exists signals_traffic jsonb;
 ```
 
 ---
@@ -216,11 +229,15 @@ Table `fare_entries`, one row per logged vehicle-tier observation. Numeric field
 are nullable — an empty input or a skipped tier is stored as `NULL` (cleaner for
 analysis than a sentinel string). Each row records `created_by` (the account —
 i.e. database — that logged it) and `created_at` (server timestamp); RLS uses
-`created_by` to keep each database's rows private to itself. `signals_snapshot`
-(jsonb, nullable) holds the Zipo Pricing Model's live-signals response
-captured at logging time (see "Signals snapshot" above) — `NULL` means no
-snapshot was captured (fetch failed, or the row predates this feature), not
-"no active signals".
+`created_by` to keep each database's rows private to itself. The 7
+`signals_weather` / `signals_tfl` / `signals_events` / `signals_sports` /
+`signals_rail` / `signals_strikes` / `signals_traffic` columns (jsonb,
+nullable) each hold that source's live-signal data for this entry's *pickup*
+H3 signal zone, captured at logging time (see "Signals snapshot" above).
+`NULL` means either no snapshot was captured for the row at all (fetch
+failed, or the row predates these columns) or that specific source had no
+active signal in this entry's zone — the two aren't distinguished; re-derive
+the pickup zone from `origin_lat`/`origin_lng` if that distinction matters.
 
 Table `databases`: just `name` (shown in the login picker) and `email` (the
 synthetic address behind that name's Supabase Auth account) — enough for the
