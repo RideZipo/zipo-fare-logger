@@ -440,10 +440,15 @@ async function fetchSignalsSnapshot(){
 
 async function insertRow(row){
   setSync('busy');
-  // Only capture a snapshot for genuinely new entries (recordTier) — rows
-  // coming back through dbToRow (restores/undo) already carry their
-  // original signals_snapshot and must not have it overwritten.
+  // signals_snapshot is set one of three ways by the time we get here:
+  //  - absent entirely: no observation context supplied one (fallback) -> fetch fresh.
+  //  - a Promise: recordTier() shared one fetch across every tier of the same
+  //    observation (see beginWith/cur.signalsSnapshot) -> await it; awaiting an
+  //    already-settled Promise multiple times (one per tier row) does not refetch.
+  //  - an already-resolved value (object or null): a restore/undo row from dbToRow
+  //    carrying its original snapshot -> use as-is, never refetch or overwrite.
   if(!('signals_snapshot' in row)) row.signals_snapshot = await fetchSignalsSnapshot();
+  else if(row.signals_snapshot && typeof row.signals_snapshot.then==='function') row.signals_snapshot = await row.signals_snapshot;
   const payload = rowToDb(row); payload.created_by = CURRENT_USER ? CURRENT_USER.id : null;
   const { data, error } = await sb.from(TABLE).insert(payload).select('id').single();
   if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
@@ -928,7 +933,10 @@ function showManualPick(){
 
 function beginWith(p){
   const now=new Date();
-  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice() };
+  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice(),
+    // One shared signals fetch for the whole observation (all tiers of this
+    // pair/date/time), not one per tier — see insertRow().
+    signalsSnapshot: fetchSignalsSnapshot() };
   $('idle').style.display='none'; $('pickPair').style.display='none'; $('capture').style.display='block';
   renderPostcodes(p); showTier();
 }
@@ -996,7 +1004,9 @@ function recordTier(skipped){
       base_fare:skipped?NA:val('fBase'), minimum_fare:skipped?NA:val('fMin'),
       per_minute:skipped?NA:val('fPerMin'), per_mile:skipped?NA:val('fPerMile'),
       operating_fee:skipped?NA:val('fOpFee'), tolls_surcharges:skipped?NA:val('fToll'),
-      notes:($('fNote')?$('fNote').value:'')||'' };
+      notes:($('fNote')?$('fNote').value:'')||'',
+      // Shared across every tier of this observation — one fetch, not one per tier.
+      signals_snapshot:cur.signalsSnapshot };
     rows.push(row); insertRow(row);
     cur.tierIdx++;
     if(cur.tierIdx>=cur.tiers.length) finishObs(); else showTier();

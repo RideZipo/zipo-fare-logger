@@ -90,12 +90,23 @@ alter table public.fare_entries add column if not exists signals_snapshot jsonb;
 
 ## Client changes (`index.html`)
 
-- `insertRow(row)` ([index.html:422](index.html#L422)): before the Supabase
-  insert, `fetch('/.netlify/functions/signals-proxy')`. On success, attach
-  the parsed JSON as `signals_snapshot` on the insert payload. On failure
-  (non-200, timeout, network error), proceed with `signals_snapshot: null`.
-  Either way, the Supabase insert always happens — the fare save is never
-  blocked by this call.
+- One snapshot per **observation**, not per tier. An observation (`cur`) is
+  one pair logged at one date/time across all its configured vehicle tiers
+  (`recordTier()` runs once per tier). `beginWith(p)` — where `cur` is
+  initialized — kicks off `fetchSignalsSnapshot()` once and stores the
+  in-flight Promise as `cur.signalsSnapshot`. Each `recordTier()` call
+  attaches that same Promise reference to its row as `signals_snapshot`
+  before pushing it. Because all tier rows share one Promise, only one
+  network round trip happens per observation, regardless of tier count —
+  awaiting an already-settled Promise multiple times does not refetch.
+- `insertRow(row)` ([index.html:441](index.html#L441)) resolves whatever it
+  finds in `row.signals_snapshot` before the Supabase insert: absent key ->
+  fetch fresh (fallback for any row-creation path outside an observation);
+  a Promise -> await it; an already-resolved value (object or `null`) ->
+  use as-is. That last case covers restore/undo rows coming from `dbToRow`,
+  which must never be refetched or overwritten. On any fetch failure
+  (non-200, timeout, network error), the resolved value is `null` and the
+  Supabase insert still happens — the fare save is never blocked by this.
 - `updateRow(row)` (editing an existing entry) is unchanged — the snapshot is
   captured once, at logging time, and is not refreshed on later edits.
 - `rowToDb` / `dbToRow` gain the `signals_snapshot` field (pass-through,
