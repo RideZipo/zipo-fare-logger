@@ -542,6 +542,8 @@ const PALETTE = [["#EEEDFE","#3C3489"],["#E1F5EE","#085041"],["#E6F1FB","#0C447C
 let rows = [];
 let cur = null;
 let cfg = null;
+let obsPage = 1;
+const OBS_PAGE_SIZE = 25;
 let editingPresetId = null;   // which fare-default preset is shown in Settings
 let renamingPresetId = null;  // which preset's tab is mid-rename
 const $ = id => document.getElementById(id);
@@ -658,9 +660,23 @@ async function load() {
 }
 async function loadRows(){
   setSync('busy');
-  const { data, error } = await sb.from(TABLE).select('*').order('created_at', { ascending: true });
-  if(error){ setSync('err'); flash('Load failed: '+error.message); rows=[]; return; }
-  rows = (data||[]).map(dbToRow); setSync('ok');
+  // Supabase's PostgREST platform default caps every response at 1000 rows
+  // (db-max-rows) regardless of how many match — a plain .select('*') with
+  // no .range() silently drops everything past row 1000 once an account
+  // passes that many entries. Page through in chunks of PAGE until a page
+  // comes back short, so accounts with 1000+ observations still load them all.
+  const PAGE = 1000;
+  const all = [];
+  let from = 0;
+  while(true){
+    const { data, error } = await sb.from(TABLE).select('*')
+      .order('created_at', { ascending: true }).range(from, from + PAGE - 1);
+    if(error){ setSync('err'); flash('Load failed: '+error.message); rows=[]; return; }
+    all.push(...(data||[]));
+    if(!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  rows = all.map(dbToRow); setSync('ok');
 }
 async function saveRows(){ /* per-row persistence handles this */ }
 
@@ -944,9 +960,25 @@ function showManualPick(){
   });
 }
 
+// Convert a Date to its UK wall-clock date/time (Europe/London — GMT or BST,
+// whichever applies on that date), regardless of the device's own local time
+// zone. Previously `date` came from toISOString() (UTC) while `time` came
+// from toTimeString() (the browser's local zone) — two different zones on
+// the same observation, and neither was UK time unless the device happened
+// to be UK-based on GMT.
+function londonDateTime(d){
+  const parts={};
+  new Intl.DateTimeFormat('en-GB',{ timeZone:'Europe/London', year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false })
+    .formatToParts(d).forEach(p=>{ parts[p.type]=p.value; });
+  const hour = parts.hour==='24' ? '00' : parts.hour; // some ICU builds render midnight as "24" with hour12:false
+  return { date: parts.year+'-'+parts.month+'-'+parts.day, time: hour+':'+parts.minute+':'+parts.second };
+}
+
 function beginWith(p){
   const now=new Date();
-  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice(),
+  const lt=londonDateTime(now);
+  cur={ pair:p, date:lt.date, time:lt.time, tierIdx:0, tiers:cfg.tiers.slice(),
     // One shared signals fetch for the whole observation (all tiers of this
     // pair/date/time), not one per tier — see insertRow(). Scoped to the
     // pickup location's signal zone, not the whole-London dump.
@@ -1029,7 +1061,7 @@ function recordTier(skipped){
   }
 }
 
-async function finishObs(){ cur=null; await saveRows(); $('capture').style.display='none'; $('idle').style.display='block'; render(); }
+async function finishObs(){ cur=null; await saveRows(); obsPage=1; $('capture').style.display='none'; $('idle').style.display='block'; render(); }
 
 function render(){
   const obs=new Set(rows.map(r=>r.date+r.time+r.pair_id)).size;
@@ -1042,20 +1074,36 @@ function render(){
     return;
   }
   rows.forEach(r=>{ if(!r._id) r._id=newRowId(); });
-  const recent=rows.slice(-12).reverse();
-  let h='<div class="ledger-h"><span>Recent</span><span class="muted" style="font-weight:400;font-size:12px;">latest '+Math.min(12,rows.length)+' of '+rows.length+' \u00b7 tap a row to edit</span></div>';
+  // Sorted by observation time, most recent first, then paginated \u2014 rather
+  // than only ever showing a fixed "latest 12" slice, which made anything
+  // past that unreachable in the UI.
+  const sorted=rows.slice().sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  const totalPages=Math.max(1,Math.ceil(sorted.length/OBS_PAGE_SIZE));
+  obsPage=Math.min(Math.max(1,obsPage),totalPages);
+  const pageStart=(obsPage-1)*OBS_PAGE_SIZE;
+  const page=sorted.slice(pageStart,pageStart+OBS_PAGE_SIZE);
+  let h='<div class="ledger-h"><span>Observations</span><span class="muted" style="font-weight:400;font-size:12px;">'+
+    (pageStart+1)+'\u2013'+Math.min(pageStart+OBS_PAGE_SIZE,sorted.length)+' of '+sorted.length+' \u00b7 sorted by time, newest first \u00b7 tap a row to edit</span></div>';
   h+='<table><thead><tr><th>Time</th><th>Pair</th><th>Tier</th><th>Price</th><th>Base</th><th>Wait</th><th>ETA</th><th></th></tr></thead><tbody>';
-  recent.forEach(r=>{ h+='<tr class="obsrow" data-id="'+r._id+'" style="cursor:pointer;"><td class="n">'+r.time.slice(0,5)+'</td><td class="n">'+r.pair_id+'</td><td>'+r.vehicle+'</td>'+
+  page.forEach(r=>{ h+='<tr class="obsrow" data-id="'+r._id+'" style="cursor:pointer;"><td class="n">'+r.time.slice(0,5)+'</td><td class="n">'+r.pair_id+'</td><td>'+r.vehicle+'</td>'+
     '<td class="n">'+(r.skipped?'<span style="color:var(--amber)">skip</span>':(r.price_gbp==='NaN'?'\u2014':'\u00a3'+r.price_gbp))+'</td>'+
     '<td class="n">'+(r.skipped||r.base_fare==='NaN'?'\u2014':'\u00a3'+r.base_fare)+'</td>'+
     '<td class="n">'+(r.skipped||r.wait_for_driver_min==='NaN'?'\u2014':r.wait_for_driver_min)+'</td>'+
     '<td class="n">'+(r.skipped||r.driver_eta==='NaN'?'\u2014':(r.driver_eta||'\u2014'))+'</td>'+
     '<td style="color:var(--faint);">\u270e</td></tr>'; });
   h+='</tbody></table>';
+  h+='<div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;">'+
+    '<button id="obsPrev" class="btn small ghost"'+(obsPage<=1?' disabled':'')+'>\u2190 Prev</button>'+
+    '<span class="muted" style="font-size:12px;">Page '+obsPage+' of '+totalPages+'</span>'+
+    '<button id="obsNext" class="btn small ghost"'+(obsPage>=totalPages?' disabled':'')+'>Next \u2192</button>'+
+  '</div>';
   $('tableWrap').innerHTML=h;
   $('tableWrap').querySelectorAll('.obsrow').forEach(tr=>{
     tr.onclick=()=>editObservationRow(tr.getAttribute('data-id'));
   });
+  const prevBtn=$('obsPrev'), nextBtn=$('obsNext');
+  if(prevBtn) prevBtn.onclick=()=>{ obsPage--; render(); };
+  if(nextBtn) nextBtn.onclick=()=>{ obsPage++; render(); };
 }
 
 const NAFIELDS=[['price_gbp','fePrice','Price (£)','number'],['wait_for_driver_min','feEta','Wait (min)','number'],
@@ -1142,7 +1190,7 @@ function exportCSV(){
   const cols=['date','time','pair_id','pair_type','origin','destination','origin_lat','origin_lng','dest_lat','dest_lng','vehicle','skipped','price_gbp','wait_for_driver_min','driver_eta','journey_min','base_fare','minimum_fare','per_minute','per_mile','operating_fee','tolls_surcharges','notes'];
   const esc=v=>{ v=(v===null||v===undefined)?'':String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
   const csv='\ufeff'+[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\n');
-  const fname='uber_observations_'+new Date().toISOString().slice(0,10)+'.csv';
+  const fname='uber_observations_'+londonDateTime(new Date()).date+'.csv';
   let downloaded=false;
   try{
     const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
