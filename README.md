@@ -167,7 +167,11 @@ Netlify Function that keeps the pricing model's API key out of the browser.
 The function takes the observation's pickup `lat`/`lng`, resolves which H3
 signal zone that falls in (via `GET /v1/pricing`, discarding everything
 price-related from that response — only the zone is used), then fetches
-`GET /v1/admin/signals` and keeps just that one zone's data per source. To
+`GET /v1/admin/signals`, keeps just that one zone's data per source, and
+strips each source down to raw/reported values (e.g. weather's `rain_mm` /
+`temp_c` / `wind_ms`) — Zipo's own computed demand scores, severities, and
+attendance estimates are dropped. See `stripComputed()` in
+`netlify/functions/signals-proxy.js` for the exact field list per source. To
 enable it:
 
 1. In Netlify: **Site configuration** → **Environment variables**, add:

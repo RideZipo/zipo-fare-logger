@@ -15,10 +15,12 @@ would explain why a fare was high or low at that time.
 On every fare entry logged through the app, also capture and store the Zipo
 Pricing Model's current live signals **for that entry's pickup location
 only** (the H3 res-6 signal zone containing the pickup coordinate) — not a
-London-wide dump, and not a computed Zipo price. Never block a fare save on
-this: it's a secondary enrichment. Store each signal source
-(weather/tfl/events/sports/rail/strikes/traffic) in its own column rather
-than one combined blob, so they can be queried/analysed independently.
+London-wide dump, and **raw/reported values only**, not Zipo's own computed
+demand scores, severities, or attendance estimates, and not a computed Zipo
+price. Never block a fare save on this: it's a secondary enrichment. Store
+each signal source (weather/tfl/events/sports/rail/strikes/traffic) in its
+own column rather than one combined blob, so they can be queried/analysed
+independently.
 
 ## Architecture
 
@@ -70,13 +72,31 @@ shared call per observation, not per tier — see below).
   environment variables (set in the Netlify dashboard, documented in the
   README, never committed).
 - Requires `lat`/`lng` query params (400 if missing). Resolves the zone via
-  `/v1/pricing`, fetches `/v1/admin/signals`, filters to that zone, and
-  returns `{ cluster_slug, cluster_name, weather, tfl, events, sports, rail,
-  strikes, traffic }` (each source's value is its zone's `data` object, or
-  `null` if that source had no active signal there) with `200`. ~3.5s
-  timeout per upstream call. On any failure (timeout, non-2xx, key/url
-  unset), returns a `502` with a short error body — the caller treats any
-  non-200 as "no snapshot" and proceeds without one (see Error handling).
+  `/v1/pricing`, fetches `/v1/admin/signals`, filters to that zone, strips
+  each source's payload down to raw/reported fields only via
+  `stripComputed()` (dropping Zipo's own computed scores — see table below),
+  and returns `{ cluster_slug, cluster_name, weather, tfl, events, sports,
+  rail, strikes, traffic }` (`null` per source if that zone had no active
+  signal there) with `200`. ~3.5s timeout per upstream call. On any failure
+  (timeout, non-2xx, key/url unset), returns a `502` with a short error body
+  — the caller treats any non-200 as "no snapshot" and proceeds without one
+  (see Error handling).
+
+  | Source | Raw (kept) | Computed (dropped) |
+  |---|---|---|
+  | weather | `rain_mm`, `temp_c`, `wind_ms` | `demand_pressure` |
+  | tfl | `affected_lines` | `disruption_score`, `hex_scores` |
+  | events | `events[].title/category/venue/start_iso/end_iso` | `total_attendance`, `event_count`, `events[].attendance` (estimated, not measured) |
+  | sports | `fixtures[].title/venue/start_iso/end_iso/source` | `total_attendance`, `fixture_count`, `fixtures[].attendance` (estimated) |
+  | strikes | `active`, `struck_lines`, `description` | `severity`, `hex_scores` |
+  | traffic | `disruptions[].severity/category/comment` | `congestion_score`, `disruption_count` |
+  | rail | `summary` | `disruption_score` |
+
+  This allowlist is hand-derived from the pipeline source modules in
+  `Zipo-Pricing-Model` (`pipeline/sources/*.py`, `pipeline/listeners/rail.py`)
+  as of 2026-07-20 and will drift silently if those modules' payload shapes
+  change — there's no schema contract enforcing it. Whoever changes a
+  pipeline source's `value`/payload shape should check `stripComputed()`.
 
 ### `netlify.toml`
 
