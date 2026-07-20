@@ -400,7 +400,7 @@ function dbToRow(d){
     base_fare:na(d.base_fare), minimum_fare:na(d.minimum_fare),
     per_minute:na(d.per_minute), per_mile:na(d.per_mile),
     operating_fee:na(d.operating_fee), tolls_surcharges:na(d.tolls_surcharges),
-    notes:d.notes||'' };
+    notes:d.notes||'', signals_snapshot:(d.signals_snapshot===undefined?null:d.signals_snapshot) };
 }
 function rowToDb(r){
   const num = v => (v==='NaN'||v===''||v==null||isNaN(parseFloat(v))) ? null : parseFloat(v);
@@ -416,11 +416,39 @@ function rowToDb(r){
     base_fare:num(r.base_fare), minimum_fare:num(r.minimum_fare),
     per_minute:num(r.per_minute), per_mile:num(r.per_mile),
     operating_fee:num(r.operating_fee), tolls_surcharges:num(r.tolls_surcharges),
-    notes:r.notes||'' };
+    notes:r.notes||'', signals_snapshot:(r.signals_snapshot===undefined?null:r.signals_snapshot) };
+}
+
+// Best-effort fetch of the Zipo Pricing Model's current live signals
+// (weather, events, TfL, etc. — proxied so the API key never reaches the
+// browser). Never throws: resolves to null on any failure, and a fare entry
+// always saves even when this does.
+async function fetchSignalsSnapshot(){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 5000);
+  try{
+    const res = await fetch('/.netlify/functions/signals-proxy', { signal: ctrl.signal });
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('status '+res.status);
+    return await res.json();
+  }catch(e){
+    clearTimeout(timer);
+    flash('Signals unavailable (fare still saved)');
+    return null;
+  }
 }
 
 async function insertRow(row){
   setSync('busy');
+  // signals_snapshot is set one of three ways by the time we get here:
+  //  - absent entirely: no observation context supplied one (fallback) -> fetch fresh.
+  //  - a Promise: recordTier() shared one fetch across every tier of the same
+  //    observation (see beginWith/cur.signalsSnapshot) -> await it; awaiting an
+  //    already-settled Promise multiple times (one per tier row) does not refetch.
+  //  - an already-resolved value (object or null): a restore/undo row from dbToRow
+  //    carrying its original snapshot -> use as-is, never refetch or overwrite.
+  if(!('signals_snapshot' in row)) row.signals_snapshot = await fetchSignalsSnapshot();
+  else if(row.signals_snapshot && typeof row.signals_snapshot.then==='function') row.signals_snapshot = await row.signals_snapshot;
   const payload = rowToDb(row); payload.created_by = CURRENT_USER ? CURRENT_USER.id : null;
   const { data, error } = await sb.from(TABLE).insert(payload).select('id').single();
   if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
@@ -905,7 +933,10 @@ function showManualPick(){
 
 function beginWith(p){
   const now=new Date();
-  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice() };
+  cur={ pair:p, date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,8), tierIdx:0, tiers:cfg.tiers.slice(),
+    // One shared signals fetch for the whole observation (all tiers of this
+    // pair/date/time), not one per tier — see insertRow().
+    signalsSnapshot: fetchSignalsSnapshot() };
   $('idle').style.display='none'; $('pickPair').style.display='none'; $('capture').style.display='block';
   renderPostcodes(p); showTier();
 }
@@ -973,7 +1004,9 @@ function recordTier(skipped){
       base_fare:skipped?NA:val('fBase'), minimum_fare:skipped?NA:val('fMin'),
       per_minute:skipped?NA:val('fPerMin'), per_mile:skipped?NA:val('fPerMile'),
       operating_fee:skipped?NA:val('fOpFee'), tolls_surcharges:skipped?NA:val('fToll'),
-      notes:($('fNote')?$('fNote').value:'')||'' };
+      notes:($('fNote')?$('fNote').value:'')||'',
+      // Shared across every tier of this observation — one fetch, not one per tier.
+      signals_snapshot:cur.signalsSnapshot };
     rows.push(row); insertRow(row);
     cur.tierIdx++;
     if(cur.tierIdx>=cur.tiers.length) finishObs(); else showTier();

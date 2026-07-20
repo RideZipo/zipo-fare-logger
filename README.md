@@ -10,13 +10,21 @@ its password; nobody sees another database's entries.
 The app is plain static files — no build step, no framework, no bundler.
 
 ```
-index.html          the fare logger (gated: redirects to login if signed out)
-login.html          database picker + "create a new database" + sign-in
-config.js           <-- paste your Supabase URL + anon key here
-supabase-setup.sql  tables + Row Level Security policies (run once)
-netlify.toml        Netlify deploy config
-README.md           this file
+index.html                        the fare logger (gated: redirects to login if signed out)
+login.html                        database picker + "create a new database" + sign-in
+config.js                         <-- paste your Supabase URL + anon key here
+supabase-setup.sql                tables + Row Level Security policies (run once)
+netlify.toml                      Netlify deploy config
+netlify/functions/signals-proxy.js  server-side proxy to the Zipo Pricing Model's live signals
+README.md                         this file
 ```
+
+Every logged fare also captures a snapshot of the Zipo Pricing Model's live
+signals (weather, active events, TfL disruptions, etc. — whatever's currently
+in its Redis cache) via `netlify/functions/signals-proxy.js`, so you can
+later correlate a logged fare against the conditions at that moment. This is
+best-effort: if the pricing model is unreachable, the fare still saves, just
+without a snapshot. See "Signals snapshot" below for setup.
 
 ---
 
@@ -150,6 +158,32 @@ feed is shared.
    `netlify.toml` already sets this). Deploy.
 4. Future `git push`es redeploy automatically.
 
+### 8. Signals snapshot (optional but recommended)
+
+Each logged fare captures a snapshot of the Zipo Pricing Model's live
+signals via a Netlify Function that keeps the pricing model's API key out of
+the browser. To enable it:
+
+1. In Netlify: **Site configuration** → **Environment variables**, add:
+   - `PRICING_MODEL_URL` — base URL of the Zipo Pricing Model API (e.g.
+     `http://<ec2-host>:8000`), no trailing slash.
+   - `PRICING_MODEL_API_KEY` — its `X-API-Key` (the same server-to-server key
+     used elsewhere, e.g. `ziporide-api`'s `PRICING_MODEL_API_KEY`). **Never**
+     put this in `config.js` or any committed file — it belongs only here.
+2. Redeploy so the function picks up the new environment variables.
+
+If these aren't set, or the pricing model is unreachable when a fare is
+logged, the fare still saves — `signals_snapshot` is just stored as `NULL`
+for that row, and a small toast says so.
+
+**Existing installs:** if your Supabase project was set up before this
+column existed, either re-run the whole `supabase-setup.sql` (safe, additive)
+or just run:
+
+```sql
+alter table public.fare_entries add column if not exists signals_snapshot jsonb;
+```
+
 ---
 
 ## How it fits together
@@ -182,7 +216,11 @@ Table `fare_entries`, one row per logged vehicle-tier observation. Numeric field
 are nullable — an empty input or a skipped tier is stored as `NULL` (cleaner for
 analysis than a sentinel string). Each row records `created_by` (the account —
 i.e. database — that logged it) and `created_at` (server timestamp); RLS uses
-`created_by` to keep each database's rows private to itself.
+`created_by` to keep each database's rows private to itself. `signals_snapshot`
+(jsonb, nullable) holds the Zipo Pricing Model's live-signals response
+captured at logging time (see "Signals snapshot" above) — `NULL` means no
+snapshot was captured (fetch failed, or the row predates this feature), not
+"no active signals".
 
 Table `databases`: just `name` (shown in the login picker) and `email` (the
 synthetic address behind that name's Supabase Auth account) — enough for the
