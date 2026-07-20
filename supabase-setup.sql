@@ -46,8 +46,19 @@ create table if not exists public.fare_entries (
   operating_fee         numeric,
   tolls_surcharges      numeric,
 
-  notes                 text default ''
+  notes                 text default '',
+
+  -- snapshot of the Zipo Pricing Model's live signals (calendar, weather,
+  -- TfL, events, sports, rail, strikes, traffic — GET /v1/admin/signals)
+  -- at the moment this entry was logged. NULL = no snapshot was captured
+  -- (fetch failed, or the row predates this column) — never means "no
+  -- active signals". Captured once at insert time; never refreshed by edits.
+  signals_snapshot      jsonb
 );
+
+-- Additive migration for installs created before signals_snapshot existed.
+-- Safe to re-run.
+alter table public.fare_entries add column if not exists signals_snapshot jsonb;
 
 -- Helpful indexes for the shared feed and for time-of-day analysis.
 create index if not exists fare_entries_created_at_idx on public.fare_entries (created_at desc);

@@ -5,6 +5,9 @@
   publish = "."
   command = ""
 
+[functions]
+  directory = "netlify/functions"
+
 # Send anyone hitting the site root to the login page first. login.html itself
 # forwards to index.html when a valid session already exists, and index.html
 # bounces back to login.html when there's no session — so the gate holds either way.

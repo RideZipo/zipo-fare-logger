@@ -400,7 +400,7 @@ function dbToRow(d){
     base_fare:na(d.base_fare), minimum_fare:na(d.minimum_fare),
     per_minute:na(d.per_minute), per_mile:na(d.per_mile),
     operating_fee:na(d.operating_fee), tolls_surcharges:na(d.tolls_surcharges),
-    notes:d.notes||'' };
+    notes:d.notes||'', signals_snapshot:(d.signals_snapshot===undefined?null:d.signals_snapshot) };
 }
 function rowToDb(r){
   const num = v => (v==='NaN'||v===''||v==null||isNaN(parseFloat(v))) ? null : parseFloat(v);
@@ -416,11 +416,34 @@ function rowToDb(r){
     base_fare:num(r.base_fare), minimum_fare:num(r.minimum_fare),
     per_minute:num(r.per_minute), per_mile:num(r.per_mile),
     operating_fee:num(r.operating_fee), tolls_surcharges:num(r.tolls_surcharges),
-    notes:r.notes||'' };
+    notes:r.notes||'', signals_snapshot:(r.signals_snapshot===undefined?null:r.signals_snapshot) };
+}
+
+// Best-effort fetch of the Zipo Pricing Model's current live signals
+// (weather, events, TfL, etc. — proxied so the API key never reaches the
+// browser). Never throws: resolves to null on any failure, and a fare entry
+// always saves even when this does.
+async function fetchSignalsSnapshot(){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 5000);
+  try{
+    const res = await fetch('/.netlify/functions/signals-proxy', { signal: ctrl.signal });
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('status '+res.status);
+    return await res.json();
+  }catch(e){
+    clearTimeout(timer);
+    flash('Signals unavailable (fare still saved)');
+    return null;
+  }
 }
 
 async function insertRow(row){
   setSync('busy');
+  // Only capture a snapshot for genuinely new entries (recordTier) — rows
+  // coming back through dbToRow (restores/undo) already carry their
+  // original signals_snapshot and must not have it overwritten.
+  if(!('signals_snapshot' in row)) row.signals_snapshot = await fetchSignalsSnapshot();
   const payload = rowToDb(row); payload.created_by = CURRENT_USER ? CURRENT_USER.id : null;
   const { data, error } = await sb.from(TABLE).insert(payload).select('id').single();
   if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
