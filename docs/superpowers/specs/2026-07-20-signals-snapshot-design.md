@@ -32,7 +32,7 @@ Netlify Function: /.netlify/functions/signals-proxy?lat=..&lng=..
   │  1. GET {PRICING_MODEL_URL}/v1/pricing?lat=..&lng=..
   │     → resolve `cluster` (the H3 res-6 signal zone slug); everything
   │       else in that response (price, fees, etc.) is discarded, never stored.
-  │  2. GET {PRICING_MODEL_URL}/v1/admin/signals
+  │  2. GET {PRICING_MODEL_URL}/v1/admin/signals?include_inactive=true
   │     → filter live_signals[source] down to the one entry matching `cluster`,
   │       for each of weather/tfl/events/sports/rail/strikes/traffic.
   │  header on both calls: X-API-Key: {PRICING_MODEL_API_KEY} (Netlify env vars, server-side only)
@@ -41,7 +41,16 @@ Zipo Pricing Model API (EC2)
   → /v1/pricing resolves the H3 zone via zones/lookup.py (same res-6
     cluster_slug used as the Redis key for every signal source — see
     zones/lookup.py:18, pipeline/cache.py write_signal())
-  → /v1/admin/signals reads live signals from Redis, all zones
+  → /v1/admin/signals reads live signals from Redis, all zones. Without
+    `include_inactive=true` it drops any zone/source the pricing model
+    doesn't deem "active" (`_has_active_signal()` in admin.py) — e.g.
+    weather with `demand_pressure == 0` on an ordinary fair-weather day.
+    That default suits the admin panel but silently NULLed most of this
+    app's `signals_weather` column (PM1). Fixed 2026-07-21 by adding this
+    opt-in query param, which bypasses the activity filter and returns the
+    raw reported data for every zone regardless of whether the pricing
+    model currently treats it as significant. Default stays `false` so the
+    admin panel's own `/v1/admin/signals` call (no param) is unaffected.
 ```
 
 The pricing model's endpoints require `X-API-Key` (the same `ADMIN_API_KEY`
@@ -72,7 +81,7 @@ shared call per observation, not per tier — see below).
   environment variables (set in the Netlify dashboard, documented in the
   README, never committed).
 - Requires `lat`/`lng` query params (400 if missing). Resolves the zone via
-  `/v1/pricing`, fetches `/v1/admin/signals`, filters to that zone, strips
+  `/v1/pricing`, fetches `/v1/admin/signals?include_inactive=true`, filters to that zone, strips
   each source's payload down to raw/reported fields only via
   `stripComputed()` (dropping Zipo's own computed scores — see table below),
   and returns `{ cluster_slug, cluster_name, weather, tfl, events, sports,
@@ -132,10 +141,13 @@ alter table public.fare_entries add column if not exists signals_traffic jsonb;
   any time from `origin_lat`/`origin_lng` via the same zone lookup, so
   storing it would be redundant) and calendar/pipeline-health data (not
   per-zone, out of scope — see "Out of scope").
-- `NULL` in any column means either no snapshot was captured for the row at
-  all (fetch failed, or the row predates these columns) or that source had
-  no active signal in this entry's zone — the two aren't distinguished;
-  re-derive the pickup zone to check which, if that distinction matters.
+- `NULL` in any column means no snapshot was captured for the row at all
+  (fetch failed, or the row predates these columns) — since the proxy passes
+  `include_inactive=true` (PM1 fix, 2026-07-21), a source with no meaningful
+  activity in the pickup zone still comes back as real (if zero-ish) data,
+  not `NULL`. Rows logged before the fix shipped may still have `NULL` for
+  an inactive-but-fetched source; those two cases aren't distinguishable
+  after the fact.
 - Existing RLS policies on `fare_entries` (`created_by = auth.uid()`) already
   cover the new columns — no new policy needed.
 - This is an additive, idempotent change to `supabase-setup.sql` (consistent

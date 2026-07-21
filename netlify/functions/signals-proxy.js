@@ -9,10 +9,12 @@
 //      coordinate falls in. Only the `cluster`/`cluster_name` fields are
 //      used; everything price-related in that response is discarded, never
 //      stored.
-//   2. GET /v1/admin/signals    — the full per-zone signal dump, filtered
-//      down to just that one zone's entry per source, then stripped to raw
-//      reported fields only (see stripComputed) — Zipo's own computed
-//      demand scores/severities/estimates are not returned or stored.
+//   2. GET /v1/admin/signals?include_inactive=true — the full per-zone signal
+//      dump (including zones the pricing model doesn't consider "active", e.g.
+//      fair-weather days where demand_pressure is 0 — PM1), filtered down to
+//      just that one zone's entry per source, then stripped to raw reported
+//      fields only (see stripComputed) — Zipo's own computed demand
+//      scores/severities/estimates are not returned or stored.
 // PRICING_MODEL_API_KEY never reaches the browser — set PRICING_MODEL_URL
 // and PRICING_MODEL_API_KEY as Netlify environment variables (Site settings
 // -> Environment variables).
@@ -96,7 +98,7 @@ exports.handler = async function (event) {
     );
     const clusterSlug = pricing.cluster;
 
-    const signals = await getJson(`${base}/v1/admin/signals`, apiKey, 3500);
+    const signals = await getJson(`${base}/v1/admin/signals?include_inactive=true`, apiKey, 3500);
     const liveSignals = signals.live_signals || {};
 
     const filtered = { cluster_slug: clusterSlug, cluster_name: pricing.cluster_name || null };
