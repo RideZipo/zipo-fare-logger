@@ -1,0 +1,18 @@
+# Never commit secrets. The backfill script (scripts/backfill-weather.mjs) reads
+# SUPABASE_SERVICE_ROLE_KEY from the environment — that key bypasses Row Level
+# Security entirely, so if it is ever put in a file, it must not be this repo's.
+.env
+.env.*
+!.env.example
+
+# Undo files written by scripts/fix-observation-times.mjs before it edits any
+# observation data. Keep them locally; they hold row ids, not secrets, but they
+# are per-run artefacts and not part of the app.
+obs-time-backup-*.json
+
+# Netlify CLI
+.netlify/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

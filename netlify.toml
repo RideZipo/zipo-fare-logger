@@ -17,6 +17,15 @@
   status = 302
   force = false
 
+# `publish = "."` serves every file in the repo, so scripts/ would otherwise be
+# fetchable from the live site. Nothing in there holds a secret (the backfill
+# script takes its key from the environment), but it is local admin tooling and
+# has no business being served — 404 it.
+[[redirects]]
+  from = "/scripts/*"
+  to = "/login.html"
+  status = 404
+
 # Sensible security headers. (These don't replace Supabase RLS — they're just
 # good hygiene for a static site.)
 [[headers]]
