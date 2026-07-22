@@ -470,7 +470,14 @@ async function insertRow(row){
 async function updateRow(row){
   if(!row._db) return insertRow(row);
   setSync('busy');
-  const { error } = await sb.from(TABLE).update(rowToDb(row)).eq('id', row._db);
+  // Signals are captured once at insert time and never refreshed by edits (see
+  // the schema comment in supabase-setup.sql), so an edit must not send them at
+  // all. A row inserted earlier in *this* session holds _signals:null in memory,
+  // so including them here would write NULL back over a value the row has since
+  // gained in the database — e.g. anything filled in by scripts/backfill-weather.mjs.
+  const payload = rowToDb(row);
+  for(const k of Object.keys(payload)) if(k.startsWith('signals_')) delete payload[k];
+  const { error } = await sb.from(TABLE).update(payload).eq('id', row._db);
   if(error){ setSync('err'); flash('Sync failed: '+error.message); return; }
   setSync('ok');
 }
